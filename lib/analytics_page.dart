@@ -1,1728 +1,513 @@
 import 'dart:convert';
-
 import 'package:csv/csv.dart';
-
 import 'package:flutter/material.dart';
-
 import 'package:http/http.dart' as http;
-
 class AnalyticsPage extends StatefulWidget {
-
   const AnalyticsPage({super.key});
-
   @override
-
   State<AnalyticsPage> createState() => _AnalyticsPageState();
-
 }
-
 class _AnalyticsPageState extends State<AnalyticsPage> {
-
-  int selectedTab = 0;
-
+  // ВСТАВЬ СЮДА CSV-ссылку именно на лист APP Distribution
+  static const String distributionCsvUrl =
+      'PASTE_YOUR_APP_DISTRIBUTION_CSV_URL_HERE';
   bool isLoading = true;
-
-  String errorText = '';
-
-  List<List<String>> rawRows = [];
-
-  final List<Map<String, String>> tabs = [
-
-  {
-
-    'title': 'Продажи',
-
-    'url':
-
-        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?gid=2127661582&single=true&output=csv',
-
-  },
-
-  {
-
-    'title': 'Вложения',
-
-    'url':
-
-        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?gid=542093589&single=true&output=csv',
-
-  },
-
-  {
-
-    'title': 'Сводка',
-
-    'url':
-
-        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?gid=1883771878&single=true&output=csv',
-
-  },
-
-  {
-
-    'title': 'План',
-
-    'url':
-
-        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?gid=1805316772&single=true&output=csv',
-
-  },
-
-  {
-
-    'title': 'Распределение',
-
-    'url':
-
-        'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?gid=193041784&single=true&output=csv',
-
-  },
-
-];
-
-
+  String? error;
+  Map<String, List<String>> rows = {};
   @override
-
   void initState() {
-
     super.initState();
-
-    loadData();
-
+    loadDistribution();
   }
-
-  Future<void> loadData() async {
-
+  Future<void> loadDistribution() async {
     setState(() {
-
       isLoading = true;
-
-      errorText = '';
-
-      rawRows = [];
-
+      error = null;
     });
-
     try {
-
-      final url = tabs[selectedTab]['url']!;
-
-      final response = await http.get(Uri.parse(url));
-
+      final uri = Uri.parse(distributionCsvUrl);
+      final response = await http.get(uri);
       if (response.statusCode != 200) {
-
-        setState(() {
-
-          errorText = 'Ошибка загрузки: ${response.statusCode}';
-
-          isLoading = false;
-
-        });
-
-        return;
-
+        throw Exception('Ошибка загрузки CSV: ${response.statusCode}');
       }
-
-      final decoded = utf8.decode(response.bodyBytes);
-
-      final rows = const CsvToListConverter(
-
+      final csvText = utf8.decode(response.bodyBytes);
+      final csvTable = const CsvToListConverter(
         shouldParseNumbers: false,
-
         eol: '\n',
-
-      ).convert(decoded);
-
-      rawRows = rows
-
-          .map((row) => row.map((e) => e.toString().trim()).toList())
-
-          .toList();
-
-      setState(() {
-
-        isLoading = false;
-
-      });
-
-    } catch (e) {
-
-      setState(() {
-
-        errorText = 'Ошибка: $e';
-
-        isLoading = false;
-
-      });
-
-    }
-
-  }
-
-  String normalize(String value) {
-
-    return value
-
-        .toLowerCase()
-
-        .replaceAll('\n', ' ')
-
-        .replaceAll('\r', ' ')
-
-        .replaceAll('ё', 'е')
-
-        .replaceAll(RegExp(r'\s+'), ' ')
-
-        .trim();
-
-  }
-
-  String cell(List<List<String>> rows, int r, int c) {
-
-    if (r < 0 || r >= rows.length) return '';
-
-    if (c < 0 || c >= rows[r].length) return '';
-
-    return rows[r][c].trim();
-
-  }
-
-  double toDouble(String value) {
-
-    final cleaned = value
-
-        .replaceAll('₸', '')
-
-        .replaceAll('%', '')
-
-        .replaceAll('\u00A0', '')
-
-        .replaceAll(' ', '')
-
-        .replaceAll(',', '.')
-
-        .trim();
-
-    return double.tryParse(cleaned) ?? 0;
-
-  }
-
-  String formatMoney(double value) {
-
-    final number = value.round().toString();
-
-    final result = StringBuffer();
-
-    for (int i = 0; i < number.length; i++) {
-
-      final reverseIndex = number.length - i;
-
-      result.write(number[i]);
-
-      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
-
-        result.write(' ');
-
-      }
-
-    }
-
-    return '${result.toString()} ₸';
-
-  }
-
-  String formatPercent(num value) {
-
-    return '${value.toDouble().toStringAsFixed(2)}%';
-
-  }
-
-  int findHeaderRow(List<String> variants) {
-
-    for (int r = 0; r < rawRows.length; r++) {
-
-      final rowText = rawRows[r].map(normalize).join(' | ');
-
-      for (final v in variants) {
-
-        if (rowText.contains(normalize(v))) {
-
-          return r;
-
-        }
-
-      }
-
-    }
-
-    return -1;
-
-  }
-
-  int findColumnIndex(List<String> headerRow, List<String> variants) {
-
-    for (int i = 0; i < headerRow.length; i++) {
-
-      final h = normalize(headerRow[i]);
-
-      for (final v in variants) {
-
-        if (h == normalize(v)) return i;
-
-      }
-
-    }
-
-    return -1;
-
-  }
-
-  Widget buildTabButton(int index) {
-
-    final isActive = selectedTab == index;
-
-    return GestureDetector(
-
-      onTap: () {
-
-        setState(() {
-
-          selectedTab = index;
-
-        });
-
-        loadData();
-
-      },
-
-      child: AnimatedContainer(
-
-        duration: const Duration(milliseconds: 180),
-
-        margin: const EdgeInsets.only(right: 8),
-
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-
-        decoration: BoxDecoration(
-
-          color: isActive ? const Color(0xFF23C4FF) : const Color(0xFF172033),
-
-          borderRadius: BorderRadius.circular(14),
-
-          border: Border.all(
-
-            color: isActive ? const Color(0xFF7BE0FF) : const Color(0xFF293246),
-
-          ),
-
-          boxShadow: isActive
-
-              ? [
-
-                  BoxShadow(
-
-                    color: const Color(0xFF23C4FF).withOpacity(0.22),
-
-                    blurRadius: 12,
-
-                    spreadRadius: 1,
-
-                  )
-
-                ]
-
-              : [],
-
-        ),
-
-        child: Text(
-
-          tabs[index]['title']!,
-
-          style: TextStyle(
-
-            color: isActive ? Colors.white : const Color(0xFFB7C2D9),
-
-            fontWeight: FontWeight.w700,
-
-            fontSize: 13,
-
-          ),
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-  Widget statCard(
-
-    String title,
-
-    String value,
-
-    IconData icon, {
-
-    Color iconBg = const Color(0xFF1D3048),
-
-    Color iconColor = const Color(0xFF69C8FF),
-
-  }) {
-
-    return Container(
-
-      padding: const EdgeInsets.all(14),
-
-      decoration: BoxDecoration(
-
-        color: const Color(0xFF131C2B),
-
-        borderRadius: BorderRadius.circular(18),
-
-        border: Border.all(color: const Color(0xFF283246)),
-
-      ),
-
-      child: Row(
-
-        children: [
-
-          Container(
-
-            width: 46,
-
-            height: 46,
-
-            decoration: BoxDecoration(
-
-              color: iconBg,
-
-              borderRadius: BorderRadius.circular(14),
-
-            ),
-
-            child: Icon(icon, color: iconColor),
-
-          ),
-
-          const SizedBox(width: 12),
-
-          Expanded(
-
-            child: Column(
-
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-
-                Text(
-
-                  title,
-
-                  style: const TextStyle(
-
-                    color: Color(0xFF95A4BF),
-
-                    fontSize: 12,
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-
-                  value,
-
-                  style: const TextStyle(
-
-                    color: Colors.white,
-
-                    fontSize: 18,
-
-                    fontWeight: FontWeight.w800,
-
-                  ),
-
-                ),
-
-              ],
-
-            ),
-
-          ),
-
-        ],
-
-      ),
-
-    );
-
-  }
-
-  Widget valueRow(
-
-    String label,
-
-    String value, {
-
-    Color valueColor = Colors.white,
-
-  }) {
-
-    return Padding(
-
-      padding: const EdgeInsets.only(bottom: 10),
-
-      child: Row(
-
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-
-          SizedBox(
-
-            width: 118,
-
-            child: Text(
-
-              label,
-
-              style: const TextStyle(
-
-                color: Color(0xFF95A4BF),
-
-                fontSize: 13,
-
-              ),
-
-            ),
-
-          ),
-
-          Expanded(
-
-            child: Text(
-
-              value.isEmpty ? '-' : value,
-
-              textAlign: TextAlign.right,
-
-              style: TextStyle(
-
-                color: valueColor,
-
-                fontSize: 13,
-
-                fontWeight: FontWeight.w700,
-
-              ),
-
-            ),
-
-          ),
-
-        ],
-
-      ),
-
-    );
-
-  }
-
-  Widget sectionTitle(String text) {
-
-    return Padding(
-
-      padding: const EdgeInsets.only(bottom: 12),
-
-      child: Text(
-
-        text,
-
-        style: const TextStyle(
-
-          color: Colors.white,
-
-          fontSize: 19,
-
-          fontWeight: FontWeight.w800,
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-  Widget panel({required Widget child, EdgeInsets? padding}) {
-
-    return Container(
-
-      margin: const EdgeInsets.only(bottom: 14),
-
-      padding: padding ?? const EdgeInsets.all(14),
-
-      decoration: BoxDecoration(
-
-        color: const Color(0xFF131C2B),
-
-        borderRadius: BorderRadius.circular(18),
-
-        border: Border.all(color: const Color(0xFF283246)),
-
-      ),
-
-      child: child,
-
-    );
-
-  }
-
-  Widget buildSalesView() {
-
-    final headerRowIndex =
-
-        findHeaderRow(['дата', 'наименование', 'номер заказа', 'чистая прибыль']);
-
-    if (headerRowIndex == -1) {
-
-      return buildFallbackView();
-
-    }
-
-    final headers = rawRows[headerRowIndex];
-
-    final data = rawRows
-
-        .skip(headerRowIndex + 1)
-
-        .where((r) => r.any((e) => e.trim().isNotEmpty))
-
-        .toList();
-
-    final dateIdx = findColumnIndex(headers, ['Дата']);
-
-    final channelIdx = findColumnIndex(headers, ['Каспий', 'Канал']);
-
-    final nameIdx = findColumnIndex(headers, ['Наименование']);
-
-    final orderIdx = findColumnIndex(headers, ['Номер заказа']);
-
-    final costIdx = findColumnIndex(headers, ['Себестоимость']);
-
-    final rrcIdx = findColumnIndex(headers, ['РРЦ']);
-
-    final commIdx = findColumnIndex(headers, ['Комиссия Kaspi']);
-
-    final profitIdx = findColumnIndex(headers, ['Чистая прибыль']);
-
-    final commentIdx = findColumnIndex(headers, ['Комментарий']);
-
-    final monthIdx = findColumnIndex(headers, ['Месяц']);
-
-    double totalRevenue = 0;
-
-    double totalProfit = 0;
-
-    for (final row in data) {
-
-      totalRevenue += toDouble(cell([row], 0, rrcIdx));
-
-      totalProfit += toDouble(cell([row], 0, profitIdx));
-
-    }
-
-    final avgCheck = data.isEmpty ? 0 : totalRevenue / data.length;
-
-    return ListView(
-
-      padding: const EdgeInsets.all(14),
-
-      children: [
-
-        sectionTitle('Продажи'),
-
-        statCard('Выручка', formatMoney(totalRevenue), Icons.payments_rounded),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Чистая прибыль',
-
-          formatMoney(totalProfit),
-
-          Icons.trending_up_rounded,
-
-          iconBg: const Color(0xFF143126),
-
-          iconColor: const Color(0xFF5DE39A),
-
-        ),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Количество продаж',
-
-          data.length.toString(),
-
-          Icons.receipt_long_rounded,
-
-          iconBg: const Color(0xFF302317),
-
-          iconColor: const Color(0xFFFFC76A),
-
-        ),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Средний чек',
-
-          formatMoney(avgCheck.toDouble()),
-
-          Icons.shopping_cart_checkout_rounded,
-
-          iconBg: const Color(0xFF2B1D43),
-
-          iconColor: const Color(0xFFBC9BFF),
-
-        ),
-
-        const SizedBox(height: 18),
-
-        sectionTitle('Список продаж'),
-
-        ...data.map((row) {
-
-          final profit = toDouble(cell([row], 0, profitIdx));
-
-          return panel(
-
-            child: Column(
-
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-
-                Text(
-
-                  cell([row], 0, nameIdx).isEmpty
-
-                      ? 'Без названия'
-
-                      : cell([row], 0, nameIdx),
-
-                  style: const TextStyle(
-
-                    color: Colors.white,
-
-                    fontSize: 15,
-
-                    fontWeight: FontWeight.w800,
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 10),
-
-                Wrap(
-
-                  spacing: 8,
-
-                  runSpacing: 8,
-
-                  children: [
-
-                    smallChip('Дата', cell([row], 0, dateIdx)),
-
-                    smallChip('Канал', cell([row], 0, channelIdx)),
-
-                    smallChip('Заказ', cell([row], 0, orderIdx)),
-
-                    if (monthIdx != -1) smallChip('Месяц', cell([row], 0, monthIdx)),
-
-                  ],
-
-                ),
-
-                const SizedBox(height: 12),
-
-                valueRow('Себестоимость', cell([row], 0, costIdx)),
-
-                valueRow('РРЦ', cell([row], 0, rrcIdx)),
-
-                valueRow('Комиссия', cell([row], 0, commIdx)),
-
-                valueRow(
-
-                  'Прибыль',
-
-                  cell([row], 0, profitIdx),
-
-                  valueColor: profit >= 0
-
-                      ? const Color(0xFF64E39A)
-
-                      : const Color(0xFFFF8F8F),
-
-                ),
-
-                if (commentIdx != -1 &&
-
-                    cell([row], 0, commentIdx).trim().isNotEmpty)
-
-                  valueRow('Комментарий', cell([row], 0, commentIdx)),
-
-              ],
-
-            ),
-
-          );
-
-        }),
-
-      ],
-
-    );
-
-  }
-
-  Widget smallChip(String label, String value) {
-
-    return Container(
-
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-
-      decoration: BoxDecoration(
-
-        color: const Color(0xFF1B2638),
-
-        borderRadius: BorderRadius.circular(10),
-
-      ),
-
-      child: Text(
-
-        '$label: ${value.isEmpty ? '-' : value}',
-
-        style: const TextStyle(
-
-          color: Color(0xFFD7E0F4),
-
-          fontSize: 12,
-
-          fontWeight: FontWeight.w600,
-
-        ),
-
-      ),
-
-    );
-
-  }
-
-  Widget buildInvestmentsView() {
-
-    final headerIndex = findHeaderRow(['направление', 'вкладчик', 'сумма вложений']);
-
-    if (headerIndex == -1) {
-
-      return buildFallbackView();
-
-    }
-
-    final headers = rawRows[headerIndex];
-
-    final data = rawRows
-
-        .skip(headerIndex + 1)
-
-        .where((r) => r.any((e) => e.trim().isNotEmpty))
-
-        .toList();
-
-    final directionIdx = findColumnIndex(headers, ['Направление']);
-
-    final investorIdx = findColumnIndex(headers, ['Вкладчик']);
-
-    final amountIdx = findColumnIndex(headers, ['Сумма вложений']);
-
-    double total = 0;
-
-    for (final row in data) {
-
-      total += toDouble(cell([row], 0, amountIdx));
-
-    }
-
-    return ListView(
-
-      padding: const EdgeInsets.all(14),
-
-      children: [
-
-        sectionTitle('Вложения'),
-
-        statCard('Общая сумма вложений', formatMoney(total), Icons.account_balance_wallet_rounded),
-
-        const SizedBox(height: 18),
-
-        ...data.map((row) {
-
-          final amount = toDouble(cell([row], 0, amountIdx));
-
-          final share = total == 0 ? 0 : amount / total * 100;
-
-          return panel(
-
-            child: Column(
-
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-
-                Text(
-
-                  cell([row], 0, investorIdx),
-
-                  style: const TextStyle(
-
-                    color: Colors.white,
-
-                    fontSize: 16,
-
-                    fontWeight: FontWeight.w800,
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 10),
-
-                valueRow('Направление', cell([row], 0, directionIdx)),
-
-                valueRow('Сумма', formatMoney(amount)),
-
-                valueRow('Доля', formatPercent(share.toDouble())),
-
-              ],
-
-            ),
-
-          );
-
-        }),
-
-      ],
-
-    );
-
-  }
-
-  Widget buildSummaryView() {
-
-    final rows = rawRows.where((r) => r.any((e) => e.trim().isNotEmpty)).toList();
-
-    String findValueByLabel(List<String> labels) {
-
-      for (final row in rows) {
-
-        for (int i = 0; i < row.length - 1; i++) {
-
-          final left = normalize(row[i]);
-
-          for (final label in labels) {
-
-            if (left == normalize(label)) {
-
-              return row[i + 1];
-
-            }
-
-          }
-
-        }
-
-      }
-
-      return '';
-
-    }
-
-    final totalProfit = findValueByLabel(['Общая чистая прибыль', 'Общая прибыль']);
-
-    final myAriston = findValueByLabel(['Моя доля Ariston']);
-
-    final myNonAriston = findValueByLabel(['Моя доля не Ariston (+)']);
-
-    final myIncome = findValueByLabel(['Мой итоговый доход']);
-
-    final alexIncome = findValueByLabel(['Итоговый доход Алексея']);
-
-    final aristonProfit = findValueByLabel(['Прибыль Ariston']);
-
-    final nonAristonProfit = findValueByLabel(['Прибыль НЕ Ariston', 'Прибыль не Ariston']);
-
-    return ListView(
-
-      padding: const EdgeInsets.all(14),
-
-      children: [
-
-        sectionTitle('Сводка'),
-
-        statCard('Общая прибыль', formatMoney(toDouble(totalProfit)), Icons.savings_rounded),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Мой итоговый доход',
-
-          formatMoney(toDouble(myIncome)),
-
-          Icons.person_rounded,
-
-          iconBg: const Color(0xFF19314A),
-
-          iconColor: const Color(0xFF72C8FF),
-
-        ),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Доход Алексея',
-
-          formatMoney(toDouble(alexIncome)),
-
-          Icons.groups_rounded,
-
-          iconBg: const Color(0xFF2A223D),
-
-          iconColor: const Color(0xFFC49BFF),
-
-        ),
-
-        const SizedBox(height: 18),
-
-        sectionTitle('Детализация'),
-
-        panel(
-
-          child: Column(
-
-            children: [
-
-              valueRow('Прибыль Ariston', aristonProfit),
-
-              valueRow('Прибыль НЕ Ariston', nonAristonProfit),
-
-              valueRow('Моя доля Ariston', myAriston),
-
-              valueRow('Моя доля не Ariston', myNonAriston),
-
-              valueRow('Мой итоговый доход', myIncome),
-
-              valueRow('Итог Алексея', alexIncome),
-
-            ],
-
-          ),
-
-        ),
-
-      ],
-
-    );
-
-  }
-
-  Widget buildPlanView() {
-
-    final headerIndex = findHeaderRow(['месяц', 'коэффициент', 'план прибыль']);
-
-    if (headerIndex == -1) {
-
-      return buildFallbackView();
-
-    }
-
-    final headers = rawRows[headerIndex];
-
-    final data = rawRows
-
-        .skip(headerIndex + 1)
-
-        .where((r) => r.any((e) => e.trim().isNotEmpty))
-
-        .where((r) => normalize(cell([r], 0, 0)).isNotEmpty)
-
-        .toList();
-
-    final monthIdx = findColumnIndex(headers, ['Месяц']);
-
-    final coeffIdx = findColumnIndex(headers, ['Коэффициент']);
-
-    final planIdx = findColumnIndex(headers, ['План прибыль']);
-
-    final factIdx = findColumnIndex(headers, ['Факт']);
-
-    final devIdx = findColumnIndex(headers, ['Отклонение']);
-
-    final baseIdx = findColumnIndex(headers, ['Базовая прибыль']);
-
-    final perfIdx = findColumnIndex(headers, ['Выполнение %']);
-
-    final qtyIdx = findColumnIndex(headers, ['План продаж шт']);
-
-    final kaspiPlanIdx = findColumnIndex(headers, ['План Kaspi']);
-
-    final factKaspiIdx = findColumnIndex(headers, ['Факт Kaspi']);
-
-    final kaspiPerfIdx = findColumnIndex(headers, ['Выполнение Kaspi']);
-
-    final optPlanIdx = findColumnIndex(headers, ['План ОПТ']);
-
-    final optFactIdx = findColumnIndex(headers, ['Факт ОПТ']);
-
-    final optPerfIdx = findColumnIndex(headers, ['Выполнение ОПТ']);
-
-    final validRows = data.where((row) {
-
-      final month = cell([row], 0, monthIdx);
-
-      return month.isNotEmpty &&
-
-          !normalize(month).contains('доля каспи') &&
-
-          !normalize(month).contains('прибыль с одной продажи');
-
-    }).toList();
-
-    double yearPlan = 0;
-
-    double yearFact = 0;
-
-    for (final row in validRows) {
-
-      yearPlan += toDouble(cell([row], 0, planIdx));
-
-      yearFact += toDouble(cell([row], 0, factIdx));
-
-    }
-
-    final yearPerf = yearPlan == 0 ? 0 : yearFact / yearPlan * 100;
-
-    return ListView(
-
-      padding: const EdgeInsets.all(14),
-
-      children: [
-
-        sectionTitle('План годовой'),
-
-        statCard('План по прибыли', formatMoney(yearPlan), Icons.flag_rounded),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Факт',
-
-          formatMoney(yearFact),
-
-          Icons.show_chart_rounded,
-
-          iconBg: const Color(0xFF143126),
-
-          iconColor: const Color(0xFF64E39A),
-
-        ),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Выполнение',
-
-          formatPercent(yearPerf.toDouble()),
-
-          Icons.percent_rounded,
-
-          iconBg: const Color(0xFF2A223D),
-
-          iconColor: const Color(0xFFC49BFF),
-
-        ),
-
-        const SizedBox(height: 18),
-
-        ...validRows.map((row) {
-
-          final plan = toDouble(cell([row], 0, planIdx));
-
-          final fact = toDouble(cell([row], 0, factIdx));
-
-          final percentValue = cell([row], 0, perfIdx).isNotEmpty
-
-              ? toDouble(cell([row], 0, perfIdx))
-
-              : (plan == 0 ? 0 : fact / plan * 100);
-
-          return panel(
-
-            child: Column(
-
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-
-                Text(
-
-                  cell([row], 0, monthIdx),
-
-                  style: const TextStyle(
-
-                    color: Colors.white,
-
-                    fontSize: 16,
-
-                    fontWeight: FontWeight.w800,
-
-                  ),
-
-                ),
-
-                const SizedBox(height: 10),
-
-                valueRow('Коэффициент', cell([row], 0, coeffIdx)),
-
-                valueRow('План прибыли', cell([row], 0, planIdx)),
-
-                valueRow('Факт', cell([row], 0, factIdx)),
-
-                if (devIdx != -1) valueRow('Отклонение', cell([row], 0, devIdx)),
-
-                if (baseIdx != -1 &&
-
-                    cell([row], 0, baseIdx).trim().isNotEmpty)
-
-                  valueRow('Базовая прибыль', cell([row], 0, baseIdx)),
-
-                valueRow('Выполнение', formatPercent(percentValue.toDouble())),
-
-                const SizedBox(height: 8),
-
-                const Divider(color: Color(0xFF283246)),
-
-                const SizedBox(height: 8),
-
-                if (qtyIdx != -1) valueRow('План продаж шт', cell([row], 0, qtyIdx)),
-
-                if (kaspiPlanIdx != -1) valueRow('План Kaspi', cell([row], 0, kaspiPlanIdx)),
-
-                if (factKaspiIdx != -1) valueRow('Факт Kaspi', cell([row], 0, factKaspiIdx)),
-
-                if (kaspiPerfIdx != -1) valueRow('Выполнение Kaspi', cell([row], 0, kaspiPerfIdx)),
-
-                if (optPlanIdx != -1) valueRow('План ОПТ', cell([row], 0, optPlanIdx)),
-
-                if (optFactIdx != -1) valueRow('Факт ОПТ', cell([row], 0, optFactIdx)),
-
-                if (optPerfIdx != -1) valueRow('Выполнение ОПТ', cell([row], 0, optPerfIdx)),
-
-              ],
-
-            ),
-
-          );
-
-        }),
-
-      ],
-
-    );
-
-  }
-
-  Widget buildDistributionView() {
-
-    final rows = rawRows.where((r) => r.any((e) => e.trim().isNotEmpty)).toList();
-
-    String findNextToLabel(String label) {
-
-      for (final row in rows) {
-
-        for (int i = 0; i < row.length - 1; i++) {
-
-          if (normalize(row[i]) == normalize(label)) {
-
-            return row[i + 1];
-
-          }
-
-        }
-
-      }
-
-      return '';
-
-    }
-
-    String findValueInRow(String label, int valueColumn) {
-
-      for (final row in rows) {
-
+      ).convert(csvText);
+      final parsed = <String, List<String>>{};
+      for (final row in csvTable) {
         if (row.isEmpty) continue;
-
-        if (normalize(row[0]) == normalize(label) && valueColumn < row.length) {
-
-          return row[valueColumn];
-
-        }
-
+        final values = row.map((e) => e.toString().trim()).toList();
+        final first = values.first.trim().toLowerCase();
+        if (first.isEmpty || first == 'metric') continue;
+        parsed[first] = values;
       }
-
-      return '';
-
+      setState(() {
+        rows = parsed;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        error = e.toString();
+        isLoading = false;
+      });
     }
-
-    final totalProfit = findNextToLabel('Общая прибыль');
-
-    final shareStas = findNextToLabel('Доля Стаса');
-
-    final shareAlex = findNextToLabel('Доля Алексея');
-
-    final profitStas = findNextToLabel('Прибыль Стаса');
-
-    final profitAlex = findNextToLabel('Прибыль Алексея');
-
-    final investStas = findValueInRow('Вложения', 1);
-
-    final investAlex = findValueInRow('Вложения', 2);
-
-    final investShareStas = findValueInRow('Доля вложений', 1);
-
-    final investShareAlex = findValueInRow('Доля вложений', 2);
-
-    final workScoreStas = findValueInRow('Баллы за работу', 1);
-
-    final workScoreAlex = findValueInRow('Баллы за работу', 2);
-
-    final workShareStas = findValueInRow('Доля работы', 1);
-
-    final workShareAlex = findValueInRow('Доля работы', 2);
-
-    final finalShareStas = findValueInRow('Итоговая доля', 1);
-
-    final finalShareAlex = findValueInRow('Итоговая доля', 2);
-
-    final taskHeaderIndex = findHeaderRow(['задача', 'стас', 'алексей', 'вес задачи']);
-
-    List<List<String>> taskRows = [];
-
-    if (taskHeaderIndex != -1) {
-
-      taskRows = rawRows
-
-          .skip(taskHeaderIndex + 1)
-
-          .where((r) => r.any((e) => e.trim().isNotEmpty))
-
-          .where((r) {
-
-            final firstNonEmpty = r.map(normalize).join(' | ');
-
-            return !firstNonEmpty.contains('итого вес задачи') &&
-
-                !firstNonEmpty.contains('режим') &&
-
-                !firstNonEmpty.contains('капитал+работа') &&
-
-                cell([r], 0, 1).trim().isNotEmpty;
-
-          })
-
-          .toList();
-
+  }
+  String _normalizeKey(String value) {
+    return value.trim().toLowerCase();
+  }
+  List<String>? _row(String key) => rows[_normalizeKey(key)];
+  String _cell(String key, int index, {String fallback = '—'}) {
+    final row = _row(key);
+    if (row == null) return fallback;
+    if (index >= row.length) return fallback;
+    final value = row[index].trim();
+    return value.isEmpty ? fallback : value;
+  }
+  double? _toDouble(String value) {
+    final clean = value
+        .replaceAll('₸', '')
+        .replaceAll('%', '')
+        .replaceAll(' ', '')
+        .replaceAll(',', '.')
+        .trim();
+    return double.tryParse(clean);
+  }
+  String _formatMoney(String raw) {
+    final n = _toDouble(raw);
+    if (n == null) return raw;
+    final intValue = n.round();
+    final s = intValue.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final reverseIndex = s.length - i;
+      buffer.write(s[i]);
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+        buffer.write(' ');
+      }
     }
-
-    return ListView(
-
-      padding: const EdgeInsets.all(14),
-
-      children: [
-
-        sectionTitle('Распределение прибыли и работы'),
-
-        statCard('Общая прибыль', formatMoney(toDouble(totalProfit)), Icons.account_balance_rounded),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Прибыль Стаса',
-
-          formatMoney(toDouble(profitStas)),
-
-          Icons.person_rounded,
-
-          iconBg: const Color(0xFF19314A),
-
-          iconColor: const Color(0xFF72C8FF),
-
-        ),
-
-        const SizedBox(height: 10),
-
-        statCard(
-
-          'Прибыль Алексея',
-
-          formatMoney(toDouble(profitAlex)),
-
-          Icons.groups_rounded,
-
-          iconBg: const Color(0xFF2A223D),
-
-          iconColor: const Color(0xFFC49BFF),
-
-        ),
-
-        const SizedBox(height: 18),
-
-        sectionTitle('Итоговые доли'),
-
-        panel(
-
-          child: Column(
-
-            children: [
-
-              valueRow('Доля Стаса', shareStas.isEmpty ? finalShareStas : shareStas),
-
-              valueRow('Доля Алексея', shareAlex.isEmpty ? finalShareAlex : shareAlex),
-
-              valueRow('Прибыль Стаса', profitStas),
-
-              valueRow('Прибыль Алексея', profitAlex),
-
-            ],
-
-          ),
-
-        ),
-
-        sectionTitle('Капитал и работа'),
-
-        panel(
-
-          child: Column(
-
-            children: [
-
-              valueRow('Вложения Стаса', investStas),
-
-              valueRow('Вложения Алексея', investAlex),
-
-              valueRow('Доля вложений Стаса', investShareStas),
-
-              valueRow('Доля вложений Алексея', investShareAlex),
-
-              valueRow('Баллы за работу Стаса', workScoreStas),
-
-              valueRow('Баллы за работу Алексея', workScoreAlex),
-
-              valueRow('Доля работы Стаса', workShareStas),
-
-              valueRow('Доля работы Алексея', workShareAlex),
-
-              valueRow('Итоговая доля Стаса', finalShareStas),
-
-              valueRow('Итоговая доля Алексея', finalShareAlex),
-
-            ],
-
-          ),
-
-        ),
-
-        if (taskRows.isNotEmpty) ...[
-
-          sectionTitle('Задачи и вклад'),
-
-          ...taskRows.map((row) {
-
-            final task = cell([row], 0, 6);
-
-            final stas = cell([row], 0, 7);
-
-            final alex = cell([row], 0, 8);
-
-            final weight = cell([row], 0, 9);
-
-            final note = cell([row], 0, 10);
-
-            return panel(
-
-              child: Column(
-
-                crossAxisAlignment: CrossAxisAlignment.start,
-
-                children: [
-
-                  Text(
-
-                    task.isEmpty ? 'Задача' : task,
-
-                    style: const TextStyle(
-
-                      color: Colors.white,
-
-                      fontSize: 15,
-
-                      fontWeight: FontWeight.w800,
-
-                    ),
-
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  valueRow('Стас', stas),
-
-                  valueRow('Алексей', alex),
-
-                  valueRow('Вес задачи', weight),
-
-                  if (note.isNotEmpty) valueRow('Пояснение', note),
-
-                ],
-
-              ),
-
-            );
-
-          }),
-
-        ],
-
-      ],
-
-    );
-
+    return '${buffer.toString()} ₸';
   }
-
-  Widget buildFallbackView() {
-
-    final nonEmpty = rawRows.where((r) => r.any((e) => e.trim().isNotEmpty)).toList();
-
-    return ListView.builder(
-
-      padding: const EdgeInsets.all(14),
-
-      itemCount: nonEmpty.length,
-
-      itemBuilder: (context, index) {
-
-        final row = nonEmpty[index];
-
-        return panel(
-
-          child: Column(
-
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: row
-
-                .where((e) => e.trim().isNotEmpty)
-
-                .map(
-
-                  (e) => Padding(
-
-                    padding: const EdgeInsets.only(bottom: 8),
-
-                    child: Text(
-
-                      e,
-
-                      style: const TextStyle(
-
-                        color: Colors.white,
-
-                        fontSize: 14,
-
-                      ),
-
-                    ),
-
-                  ),
-
-                )
-
-                .toList(),
-
-          ),
-
-        );
-
-      },
-
-    );
-
+  String _formatPercent(String raw) {
+    final n = _toDouble(raw);
+    if (n == null) return raw;
+    return '${n.toStringAsFixed(2)}%';
   }
-
-  Widget buildCurrentTab() {
-
-    final title = tabs[selectedTab]['title']!;
-
-    switch (title) {
-
-      case 'Продажи':
-
-        return buildSalesView();
-
-      case 'Вложения':
-
-        return buildInvestmentsView();
-
-      case 'Сводка':
-
-        return buildSummaryView();
-
-      case 'План':
-
-        return buildPlanView();
-
-      case 'Распределение':
-
-        return buildDistributionView();
-
-      default:
-
-        return buildFallbackView();
-
-    }
-
-  }
-
   @override
-
   Widget build(BuildContext context) {
-
+    const bg = Color(0xFF07111F);
+    const panel = Color(0xFF0E1B2E);
+    const panel2 = Color(0xFF12233B);
+    const cyan = Color(0xFF49D6FF);
+    const green = Color(0xFF4FE39A);
+    const orange = Color(0xFFFFB44D);
+    const purple = Color(0xFF8F7CFF);
+    const textSoft = Color(0xFF9CB3C9);
+    final investmentsStas = _cell('вложения', 1);
+    final investmentsAlexey = _cell('вложения', 2);
+    final investmentsTotal = _cell('вложения', 3);
+    final investShareStas = _cell('доля вложений', 1);
+    final investShareAlexey = _cell('доля вложений', 2);
+    final workPointsStas = _cell('баллы за работу', 1);
+    final workPointsAlexey = _cell('баллы за работу', 2);
+    final workShareStas = _cell('доля работы', 1);
+    final workShareAlexey = _cell('доля работы', 2);
+    final finalShareStas = _cell('итоговая доля', 1);
+    final finalShareAlexey = _cell('итоговая доля', 2);
+    final profitStas = _cell('прибыль стаса', 1);
+    final profitAlexey = _cell('прибыль стаса', 2);
+    final totalProfit = _cell('общая прибыль', 1);
+    final model = _cell('model', 1, fallback: '—');
     return Scaffold(
-
-      backgroundColor: const Color(0xFF0B1220),
-
+      backgroundColor: bg,
       appBar: AppBar(
-
-        backgroundColor: const Color(0xFF0B1220),
-
         elevation: 0,
-
+        backgroundColor: bg,
         title: const Text(
-
           'Аналитика',
-
-          style: TextStyle(
-
-            color: Colors.white,
-
-            fontWeight: FontWeight.w800,
-
-          ),
-
+          style: TextStyle(fontWeight: FontWeight.w800),
         ),
-
-        iconTheme: const IconThemeData(color: Colors.white),
-
-      ),
-
-      body: Column(
-
-        children: [
-
-          SizedBox(
-
-            height: 60,
-
-            child: Padding(
-
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-
-              child: ListView.builder(
-
-                scrollDirection: Axis.horizontal,
-
-                itemCount: tabs.length,
-
-                itemBuilder: (context, index) => buildTabButton(index),
-
-              ),
-
-            ),
-
+        centerTitle: false,
+        actions: [
+          IconButton(
+            onPressed: loadDistribution,
+            icon: const Icon(Icons.refresh_rounded),
           ),
-
-          Expanded(
-
-            child: isLoading
-
-                ? const Center(
-
-                    child: CircularProgressIndicator(
-
-                      color: Color(0xFF23C4FF),
-
-                    ),
-
-                  )
-
-                : errorText.isNotEmpty
-
-                    ? Center(
-
-                        child: Padding(
-
-                          padding: const EdgeInsets.all(20),
-
-                          child: Text(
-
-                            errorText,
-
-                            textAlign: TextAlign.center,
-
-                            style: const TextStyle(color: Colors.white),
-
-                          ),
-
-                        ),
-
-                      )
-
-                    : buildCurrentTab(),
-
-          ),
-
         ],
-
       ),
-
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      error!,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: loadDistribution,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: panel,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: cyan.withOpacity(0.14),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Icon(
+                                Icons.analytics_rounded,
+                                color: cyan,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Финансовая модель',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Текущий режим: $model',
+                                    style: const TextStyle(
+                                      color: textSoft,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _sectionTitle('Главные показатели'),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _metricCard(
+                              title: 'Общая прибыль',
+                              value: _formatMoney(totalProfit),
+                              color: cyan,
+                              icon: Icons.account_balance_wallet_rounded,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _metricCard(
+                              title: 'Прибыль Стаса',
+                              value: _formatMoney(profitStas),
+                              color: green,
+                              icon: Icons.person_rounded,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _metricCard(
+                        title: 'Прибыль Алексея',
+                        value: _formatMoney(profitAlexey),
+                        color: orange,
+                        icon: Icons.groups_rounded,
+                      ),
+                      const SizedBox(height: 22),
+                      _sectionTitle('Вложения'),
+                      const SizedBox(height: 10),
+                      _dualCard(
+                        leftTitle: 'Стас',
+                        leftValue: _formatMoney(investmentsStas),
+                        leftSubtitle: 'Доля: ${_formatPercent(investShareStas)}',
+                        rightTitle: 'Алексей',
+                        rightValue: _formatMoney(investmentsAlexey),
+                        rightSubtitle: 'Доля: ${_formatPercent(investShareAlexey)}',
+                        totalTitle: 'Общие вложения',
+                        totalValue: _formatMoney(investmentsTotal),
+                        color: cyan,
+                      ),
+                      const SizedBox(height: 22),
+                      _sectionTitle('Работа'),
+                      const SizedBox(height: 10),
+                      _dualCard(
+                        leftTitle: 'Стас',
+                        leftValue: '$workPointsStas баллов',
+                        leftSubtitle: 'Доля работы: ${_formatPercent(workShareStas)}',
+                        rightTitle: 'Алексей',
+                        rightValue: '$workPointsAlexey баллов',
+                        rightSubtitle: 'Доля работы: ${_formatPercent(workShareAlexey)}',
+                        totalTitle: 'Сумма баллов',
+                        totalValue: _cell('баллы за работу', 3),
+                        color: purple,
+                      ),
+                      const SizedBox(height: 22),
+                      _sectionTitle('Итоговое распределение'),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: panel2,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Column(
+                          children: [
+                            _shareBar(
+                              label: 'Стас',
+                              percentText: _formatPercent(finalShareStas),
+                              value: (_toDouble(finalShareStas) ?? 0) / 100,
+                              color: green,
+                            ),
+                            const SizedBox(height: 18),
+                            _shareBar(
+                              label: 'Алексей',
+                              percentText: _formatPercent(finalShareAlexey),
+                              value: (_toDouble(finalShareAlexey) ?? 0) / 100,
+                              color: orange,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
     );
-
   }
-
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+  Widget _metricCard({
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1B2E),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF9CB3C9),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _dualCard({
+    required String leftTitle,
+    required String leftValue,
+    required String leftSubtitle,
+    required String rightTitle,
+    required String rightValue,
+    required String rightSubtitle,
+    required String totalTitle,
+    required String totalValue,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12233B),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _personBlock(
+                  title: leftTitle,
+                  value: leftValue,
+                  subtitle: leftSubtitle,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _personBlock(
+                  title: rightTitle,
+                  value: rightValue,
+                  subtitle: rightSubtitle,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.summarize_rounded, color: Colors.white70),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    totalTitle,
+                    style: const TextStyle(color: Color(0xFF9CB3C9)),
+                  ),
+                ),
+                Text(
+                  totalValue,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _personBlock({
+    required String title,
+    required String value,
+    required String subtitle,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF9CB3C9),
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 20,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _shareBar({
+    required String label,
+    required String percentText,
+    required double value,
+    required Color color,
+  }) {
+    final clamped = value.clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            Text(
+              percentText,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: clamped,
+            minHeight: 12,
+            backgroundColor: Colors.white.withOpacity(0.08),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
 }
