@@ -1,440 +1,469 @@
-import 'dart:convert';
-import 'package:csv/csv.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-class AnalyticsPage extends StatefulWidget {
+
+class AnalyticsPage extends StatelessWidget {
   const AnalyticsPage({super.key});
-  @override
-  State<AnalyticsPage> createState() => _AnalyticsPageState();
-}
-class _AnalyticsPageState extends State<AnalyticsPage> {
-  // ВСТАВЬ СЮДА CSV-ссылку именно на лист APP Distribution
-  static const String distributionCsvUrl =
-      'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?output=csv';
-  bool isLoading = true;
-  String? error;
-  Map<String, List<String>> rows = {};
-  @override
-  void initState() {
-    super.initState();
-    loadDistribution();
-  }
-  Future<void> loadDistribution() async {
-    setState(() {
-      isLoading = true;
-      error = null;
-    });
-    try {
-      final uri = Uri.parse(distributionCsvUrl);
-      final response = await http.get(uri);
-      if (response.statusCode != 200) {
-        throw Exception('Ошибка загрузки CSV: ${response.statusCode}');
-      }
-      final csvText = utf8.decode(response.bodyBytes);
-      final csvTable = const CsvToListConverter(
-        shouldParseNumbers: false,
-        eol: '\n',
-      ).convert(csvText);
-      final parsed = <String, List<String>>{};
-      for (final row in csvTable) {
-        if (row.isEmpty) continue;
-        final values = row.map((e) => e.toString().trim()).toList();
-        final first = values.first.trim().toLowerCase();
-        if (first.isEmpty || first == 'metric') continue;
-        parsed[first] = values;
-      }
-      setState(() {
-        rows = parsed;
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        error = e.toString();
-        isLoading = false;
-      });
-    }
-  }
-  String _normalizeKey(String value) {
-    return value.trim().toLowerCase();
-  }
-  List<String>? _row(String key) => rows[_normalizeKey(key)];
-  String _cell(String key, int index, {String fallback = '—'}) {
-    final row = _row(key);
-    if (row == null) return fallback;
-    if (index >= row.length) return fallback;
-    final value = row[index].trim();
-    return value.isEmpty ? fallback : value;
-  }
-  double? _toDouble(String value) {
-    final clean = value
-        .replaceAll('₸', '')
-        .replaceAll('%', '')
-        .replaceAll(' ', '')
-        .replaceAll(',', '.')
-        .trim();
-    return double.tryParse(clean);
-  }
-  String _formatMoney(String raw) {
-    final n = _toDouble(raw);
-    if (n == null) return raw;
-    final intValue = n.round();
-    final s = intValue.toString();
-    final buffer = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      final reverseIndex = s.length - i;
-      buffer.write(s[i]);
-      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
-        buffer.write(' ');
-      }
-    }
-    return '${buffer.toString()} ₸';
-  }
-  String _formatPercent(String raw) {
-    final n = _toDouble(raw);
-    if (n == null) return raw;
-    return '${n.toStringAsFixed(2)}%';
-  }
+
   @override
   Widget build(BuildContext context) {
-    const bg = Color(0xFF07111F);
-    const panel = Color(0xFF0E1B2E);
-    const panel2 = Color(0xFF12233B);
-    const cyan = Color(0xFF49D6FF);
-    const green = Color(0xFF4FE39A);
-    const orange = Color(0xFFFFB44D);
-    const purple = Color(0xFF8F7CFF);
-    const textSoft = Color(0xFF9CB3C9);
-    final investmentsStas = _cell('вложения', 1);
-    final investmentsAlexey = _cell('вложения', 2);
-    final investmentsTotal = _cell('вложения', 3);
-    final investShareStas = _cell('доля вложений', 1);
-    final investShareAlexey = _cell('доля вложений', 2);
-    final workPointsStas = _cell('баллы за работу', 1);
-    final workPointsAlexey = _cell('баллы за работу', 2);
-    final workShareStas = _cell('доля работы', 1);
-    final workShareAlexey = _cell('доля работы', 2);
-    final finalShareStas = _cell('итоговая доля', 1);
-    final finalShareAlexey = _cell('итоговая доля', 2);
-    final profitStas = _cell('прибыль стаса', 1);
-    final profitAlexey = _cell('прибыль стаса', 2);
-    final totalProfit = _cell('общая прибыль', 1);
-    final model = _cell('model', 1, fallback: '—');
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: const Color(0xFF09101D),
+
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        backgroundColor: bg,
+        centerTitle: true,
         title: const Text(
-          'Аналитика',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        centerTitle: false,
-        actions: [
-          IconButton(
-            onPressed: loadDistribution,
-            icon: const Icon(Icons.refresh_rounded),
+          'АНАЛИТИКА ПРОДАЖ',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
           ),
-        ],
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      error!,
-                      style: const TextStyle(color: Colors.redAccent),
-                    ),
+
+      body: Container(
+
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF09101D),
+              Color(0xFF0D1630),
+              Color(0xFF0A1120),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+
+                const SizedBox(height: 20),
+
+                // Главный акцент
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 22,
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: loadDistribution,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF121B2F),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(
+                      color: const Color(0xFF24314B),
+                      width: 1,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x2200A3FF),
+                        blurRadius: 28,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: const Column(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: panel,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 52,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: cyan.withOpacity(0.14),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(
-                                Icons.analytics_rounded,
-                                color: cyan,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Финансовая модель',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Текущий режим: $model',
-                                    style: const TextStyle(
-                                      color: textSoft,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                      Text(
+                        '₸124 500',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      _sectionTitle('Главные показатели'),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _metricCard(
-                              title: 'Общая прибыль',
-                              value: _formatMoney(totalProfit),
-                              color: cyan,
-                              icon: Icons.account_balance_wallet_rounded,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _metricCard(
-                              title: 'Прибыль Стаса',
-                              value: _formatMoney(profitStas),
-                              color: green,
-                              icon: Icons.person_rounded,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _metricCard(
-                        title: 'Прибыль Алексея',
-                        value: _formatMoney(profitAlexey),
-                        color: orange,
-                        icon: Icons.groups_rounded,
-                      ),
-                      const SizedBox(height: 22),
-                      _sectionTitle('Вложения'),
-                      const SizedBox(height: 10),
-                      _dualCard(
-                        leftTitle: 'Стас',
-                        leftValue: _formatMoney(investmentsStas),
-                        leftSubtitle: 'Доля: ${_formatPercent(investShareStas)}',
-                        rightTitle: 'Алексей',
-                        rightValue: _formatMoney(investmentsAlexey),
-                        rightSubtitle: 'Доля: ${_formatPercent(investShareAlexey)}',
-                        totalTitle: 'Общие вложения',
-                        totalValue: _formatMoney(investmentsTotal),
-                        color: cyan,
-                      ),
-                      const SizedBox(height: 22),
-                      _sectionTitle('Работа'),
-                      const SizedBox(height: 10),
-                      _dualCard(
-                        leftTitle: 'Стас',
-                        leftValue: '$workPointsStas баллов',
-                        leftSubtitle: 'Доля работы: ${_formatPercent(workShareStas)}',
-                        rightTitle: 'Алексей',
-                        rightValue: '$workPointsAlexey баллов',
-                        rightSubtitle: 'Доля работы: ${_formatPercent(workShareAlexey)}',
-                        totalTitle: 'Сумма баллов',
-                        totalValue: _cell('баллы за работу', 3),
-                        color: purple,
-                      ),
-                      const SizedBox(height: 22),
-                      _sectionTitle('Итоговое распределение'),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: panel2,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: Column(
-                          children: [
-                            _shareBar(
-                              label: 'Стас',
-                              percentText: _formatPercent(finalShareStas),
-                              value: (_toDouble(finalShareStas) ?? 0) / 100,
-                              color: green,
-                            ),
-                            const SizedBox(height: 18),
-                            _shareBar(
-                              label: 'Алексей',
-                              percentText: _formatPercent(finalShareAlexey),
-                              value: (_toDouble(finalShareAlexey) ?? 0) / 100,
-                              color: orange,
-                            ),
-                          ],
+                      SizedBox(height: 6),
+                      Text(
+                        'Сегодня',
+                        style: TextStyle(
+                          color: Color(0xFF93A4C3),
+                          fontSize: 14,
                         ),
                       ),
                     ],
                   ),
                 ),
-    );
-  }
-  Widget _sectionTitle(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-      ),
-    );
-  }
-  Widget _metricCard({
-    required String title,
-    required String value,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E1B2E),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF9CB3C9),
-                    fontSize: 13,
+
+                const SizedBox(height: 18),
+
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.38,
+                  children: const [
+                    MetricCard(
+                      title: 'ОБЩАЯ ПРИБЫЛЬ',
+                      value: '₸1 240 000',
+                      subtitle: '+11% к плану',
+                      startColor: Color(0xFF74D96C),
+                      endColor: Color(0xFF4C9945),
+                    ),
+                    MetricCard(
+                      title: 'ТЫ',
+                      value: '₸620 000',
+                      subtitle: 'доля 50%',
+                      startColor: Color(0xFF46C2FF),
+                      endColor: Color(0xFF2B72FF),
+                    ),
+                    MetricCard(
+                      title: 'АЛЕКСЕЙ',
+                      value: '₸620 000',
+                      subtitle: 'доля 50%',
+                      startColor: Color(0xFF8B7BFF),
+                      endColor: Color(0xFF5749D6),
+                    ),
+                    MetricCard(
+                      title: 'РАСХОДЫ',
+                      value: '₸200 000',
+                      subtitle: '+2% за период',
+                      startColor: Color(0xFFFF7A8A),
+                      endColor: Color(0xFFB8485A),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 18),
+
+                _Panel(
+                  title: 'ДИНАМИКА ПРИБЫЛИ',
+                  child: SizedBox(
+                    height: 290,
+                    child: Column(
+                      children: [
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            RangeChip(label: 'Н'),
+                            SizedBox(width: 6),
+                            RangeChip(label: 'М', active: true),
+                            SizedBox(width: 6),
+                            RangeChip(label: 'К'),
+                            SizedBox(width: 6),
+                            RangeChip(label: 'Г'),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Expanded(
+                          child: LineChart(
+                            LineChartData(
+                              minX: 0,
+                              maxX: 5,
+                              minY: 0,
+                              maxY: 5,
+                              gridData: FlGridData(
+                                show: true,
+                                drawVerticalLine: false,
+                                horizontalInterval: 1,
+                                getDrawingHorizontalLine: (value) {
+                                  return const FlLine(
+                                    color: Color(0xFF24314B),
+                                    strokeWidth: 1,
+                                  );
+                                },
+                              ),
+                              borderData: FlBorderData(show: false),
+                              titlesData: FlTitlesData(
+                                topTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false),
+                                ),
+                                rightTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false),
+                                ),
+                                leftTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false),
+                                ),
+                                bottomTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    interval: 1,
+                                    getTitlesWidget: (value, meta) {
+                                      const labels = [
+                                        '1 нед',
+                                        '2 нед',
+                                        '3 нед',
+                                        '4 нед',
+                                        '5 нед',
+                                        '6 нед',
+                                      ];
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 10),
+                                        child: Text(
+                                          labels[value.toInt()],
+                                          style: const TextStyle(
+                                            color: Color(0xFF93A4C3),
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              lineTouchData: LineTouchData(
+                                touchTooltipData: LineTouchTooltipData(
+                                  getTooltipColor: (_) => const Color(0xFF1B2640),
+                                  tooltipRoundedRadius: 12,
+                                  getTooltipItems: (spots) {
+                                    return spots.map((spot) {
+                                      return LineTooltipItem(
+                                        '₸${((spot.y + 1) * 50000).toInt()}',
+                                        const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      );
+                                    }).toList();
+                                  },
+                                ),
+                              ),
+                              lineBarsData: [
+                                LineChartBarData(
+                                  spots: const [
+                                    FlSpot(0, 0.4),
+                                    FlSpot(1, 1.7),
+                                    FlSpot(2, 1.0),
+                                    FlSpot(3, 3.0),
+                                    FlSpot(4, 2.7),
+                                    FlSpot(5, 4.2),
+                                  ],
+                                  isCurved: true,
+                                  barWidth: 4,
+                                  isStrokeCapRound: true,
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFF5CE1E6),
+                                      Color(0xFF47B5FF),
+                                      Color(0xFF7B6DFF),
+                                    ],
+                                  ),
+                                  dotData: FlDotData(
+                                    show: true,
+                                    getDotPainter: (spot, percent, bar, index) {
+                                      return FlDotCirclePainter(
+                                        radius: 4.5,
+                                        color: Colors.white,
+                                        strokeWidth: 3,
+                                        strokeColor: const Color(0x6647B5FF),
+                                      );
+                                    },
+                                  ),
+                                  belowBarData: BarAreaData(
+                                    show: true,
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        const Color(0xFF47B5FF).withOpacity(0.35),
+                                        const Color(0xFF47B5FF).withOpacity(0.02),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
+
+                const SizedBox(height: 18),
+
+                Row(
+                  children: const [
+                    Expanded(
+                      child: SmallInfoCard(
+                        title: 'ВЫРУЧКА',
+                        value: '₸3 460 000',
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: SmallInfoCard(
+                        title: 'СРЕДНИЙ ЧЕК',
+                        value: '₸17 300',
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                const SmallInfoCard(
+                  title: 'ПРОДАЖИ',
+                  value: '200',
+                  fullWidth: true,
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MetricCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final Color startColor;
+  final Color endColor;
+
+  const MetricCard({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.startColor,
+    required this.endColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [startColor, endColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: startColor.withOpacity(0.20),
+            blurRadius: 22,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
             ),
           ),
         ],
       ),
     );
   }
-  Widget _dualCard({
-    required String leftTitle,
-    required String leftValue,
-    required String leftSubtitle,
-    required String rightTitle,
-    required String rightValue,
-    required String rightSubtitle,
-    required String totalTitle,
-    required String totalValue,
-    required Color color,
-  }) {
+}
+
+class SmallInfoCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final bool fullWidth;
+
+  const SmallInfoCard({
+    super.key,
+    required this.title,
+    required this.value,
+    this.fullWidth = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      width: fullWidth ? double.infinity : null,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF12233B),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white10),
+        color: const Color(0xFF121B2F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF24314B),
+          width: 1,
+        ),
       ),
       child: Column(
+        crossAxisAlignment:
+            fullWidth ? CrossAxisAlignment.center : CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: _personBlock(
-                  title: leftTitle,
-                  value: leftValue,
-                  subtitle: leftSubtitle,
-                  color: color,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _personBlock(
-                  title: rightTitle,
-                  value: rightValue,
-                  subtitle: rightSubtitle,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.04),
-              borderRadius: BorderRadius.circular(18),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF93A4C3),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.summarize_rounded, color: Colors.white70),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    totalTitle,
-                    style: const TextStyle(color: Color(0xFF9CB3C9)),
-                  ),
-                ),
-                Text(
-                  totalValue,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
       ),
     );
   }
-  Widget _personBlock({
-    required String title,
-    required String value,
-    required String subtitle,
-    required Color color,
-  }) {
+}
+
+class _Panel extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _Panel({
+    required this.title,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFF121B2F),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: const Color(0xFF24314B),
+          width: 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1200A3FF),
+            blurRadius: 24,
+            spreadRadius: 1,
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,72 +471,45 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           Text(
             title,
             style: const TextStyle(
-              color: Color(0xFF9CB3C9),
-              fontSize: 13,
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 20,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          const SizedBox(height: 12),
+          child,
         ],
       ),
     );
   }
-  Widget _shareBar({
-    required String label,
-    required String percentText,
-    required double value,
-    required Color color,
-  }) {
-    final clamped = value.clamp(0.0, 1.0);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                ),
-              ),
-            ),
-            Text(
-              percentText,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
+}
+
+class RangeChip extends StatelessWidget {
+  final String label;
+  final bool active;
+
+  const RangeChip({
+    super.key,
+    required this.label,
+    this.active = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF6EDC76) : const Color(0xFF1A2338),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: active ? Colors.black : const Color(0xFF93A4C3),
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
         ),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: LinearProgressIndicator(
-            value: clamped,
-            minHeight: 12,
-            backgroundColor: Colors.white.withOpacity(0.08),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
