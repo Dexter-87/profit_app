@@ -10,7 +10,7 @@ class AnalyticsPage extends StatefulWidget {
 class _AnalyticsPageState extends State<AnalyticsPage> {
   // ВСТАВЬ СЮДА CSV-ссылку именно на лист APP Distribution
   static const String distributionCsvUrl =
-      'PASTE_YOUR_APP_DISTRIBUTION_CSV_URL_HERE';
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vSQ-klgRv6fa6_m4rGSRge2LwLronSDC_0GqQ6te_OK17hhz6oKWB2YgD0ZSUiiXg/pub?output=csv';
   bool isLoading = true;
   String? error;
   Map<String, List<String>> rows = {};
