@@ -44,3 +44,6 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .gitignore
+backend/key.json
+.env
+backend/node_modules/
