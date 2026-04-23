@@ -11,87 +11,74 @@ const PORT = 8080;
 const SPREADSHEET_ID = '17EH3JK7KT7bhxGTPeST6iebzGEdXvz6MJi34AGj7rPg';
 const SALES_RANGE = 'Продажи!A:Z';
 const EXPENSES_RANGE = 'Expenses!A:Z';
-
+const PLAN_RANGE = 'app_plan!A:Z';
+const INVESTMENTS_RANGE = 'Вложения!A:Z';
+const DISTRIBUTION_RANGE = 'app_distribution!A:Z';
 const auth = new google.auth.GoogleAuth({
   keyFile: 'key.json',
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
 function toNumber(value) {
-  if (value === null || value === undefined) return 0;
+  if (!value) return 0;
   if (typeof value === 'number') return value;
 
-  const cleaned = String(value)
-    .replace(/₸/g, '')
-    .replace(/\s/g, '')
-    .replace(',', '.')
-    .trim();
-
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  return parseFloat(
+    String(value)
+      .replace(/₸/g, '')
+      .replace(/\s/g, '')
+      .replace(',', '.')
+  ) || 0;
 }
 
 function parseDate(raw) {
   if (!raw) return null;
+
   const value = String(raw).trim();
+
+  // yyyy-mm-dd
+  if (value.includes('-')) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
 
   // dd.mm.yyyy
   if (value.includes('.')) {
-    const parts = value.split('.');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10) || 1;
-      const month = parseInt(parts[1], 10) || 1;
-      const year = parseInt(parts[2], 10) || 2000;
+    const [day, month, year] = value.split('.').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  // yyyy/mm/dd или mm/dd/yyyy
+  if (value.includes('/')) {
+    const parts = value.split('/').map(Number);
+
+    if (String(parts[0]).length === 4) {
+      const [year, month, day] = parts;
+      return new Date(year, month - 1, day);
+    } else {
+      const [month, day, year] = parts;
       return new Date(year, month - 1, day);
     }
   }
 
-  // yyyy/mm/dd or mm/dd/yyyy
-  if (value.includes('/')) {
-    const parts = value.split('/');
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        const year = parseInt(parts[0], 10) || 2000;
-        const month = parseInt(parts[1], 10) || 1;
-        const day = parseInt(parts[2], 10) || 1;
-        return new Date(year, month - 1, day);
-      } else {
-        const month = parseInt(parts[0], 10) || 1;
-        const day = parseInt(parts[1], 10) || 1;
-        const year = parseInt(parts[2], 10) || 2000;
-        return new Date(year, month - 1, day);
-      }
-    }
-  }
-
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? null : d;
+  return null;
 }
 
-function detectChannel(row) {
-  const explicit = (row['Канал'] || '').toString().trim();
-  if (explicit) return explicit;
-
-  const orderNumber = (row['Номер заказа'] || '').toString().trim();
-  const kaspiMarker = toNumber(row['Каспий_маркер']);
-  const kaspiCommission = toNumber(row['Комиссия Kaspi']);
-
-  if (orderNumber || kaspiMarker > 0 || kaspiCommission > 0) {
-    return 'Каспий';
-  }
-
-  return 'ОПТ';
-}
 
 function normalizeRows(values) {
   if (!values || values.length === 0) return [];
-  const headers = values[0];
 
-  return values.slice(1).map((row) => {
-    const item = {};
-    headers.forEach((header, index) => {
-      item[header] = row[index] ?? '';
+  const headers = values[0].map(h =>
+    String(h || '').trim()
+  );
+
+  return values.slice(1).map(row => {
+    const item = { __row: row };
+
+    headers.forEach((h, i) => {
+      item[h] = row[i] ?? '';
     });
+
     return item;
   });
 }
@@ -100,39 +87,33 @@ async function getSheetRows(range) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: 'v4', auth: client });
 
-  const response = await sheets.spreadsheets.values.get({
+  const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range,
   });
 
-  return normalizeRows(response.data.values || []);
+  return normalizeRows(res.data.values || []);
 }
 
-function isWithinRange(date, dateFrom, dateTo) {
+function detectChannel(row) {
+  if (row['Канал']) return row['Канал'];
+
+  if (row['Номер заказа'] || toNumber(row['Комиссия Kaspi']) > 0) {
+    return 'Каспий';
+  }
+
+  return 'ОПТ';
+}
+
+function isWithinRange(date, from, to) {
   if (!date) return false;
 
-  const current = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-  if (dateFrom) {
-    const from = new Date(
-      dateFrom.getFullYear(),
-      dateFrom.getMonth(),
-      dateFrom.getDate(),
-    );
-    if (current < from) return false;
-  }
-
-  if (dateTo) {
-    const to = new Date(
-      dateTo.getFullYear(),
-      dateTo.getMonth(),
-      dateTo.getDate(),
-    );
-    if (current > to) return false;
-  }
+  if (from && date < from) return false;
+  if (to && date > to) return false;
 
   return true;
 }
+
 
 app.get('/sales', async (req, res) => {
   try {
@@ -144,34 +125,57 @@ app.get('/sales', async (req, res) => {
   }
 });
 
-app.get('/expenses', async (req, res) => {
+
+app.get('/plan', async (req, res) => {
   try {
-    const rows = await getSheetRows(EXPENSES_RANGE);
+    const rows = await getSheetRows(PLAN_RANGE);
     res.json(rows);
   } catch (error) {
-    console.error('Ошибка /expenses:', error);
-    res.status(500).json({ error: 'Ошибка загрузки расходов' });
+    console.error('Ошибка /plan:', error);
+    res.status(500).json({ error: 'Ошибка загрузки плана' });
   }
 });
 
+app.get('/investments', async (req, res) => {
+  try {
+    const rows = await getSheetRows(INVESTMENTS_RANGE);
+    res.json(rows);
+  } catch (error) {
+    console.error('Ошибка /investments:', error);
+    res.status(500).json({ error: 'Ошибка загрузки вложений' });
+  }
+});
+
+app.get('/distribution', async (req, res) => {
+  try {
+    const rows = await getSheetRows(DISTRIBUTION_RANGE);
+    res.json(rows);
+  } catch (error) {
+    console.error('Ошибка /distribution:', error);
+    res.status(500).json({ error: 'Ошибка загрузки распределения' });
+  }
+});
+
+
 app.get('/analytics', async (req, res) => {
   try {
-    const dateFrom = req.query.date_from ? new Date(req.query.date_from) : null;
-    const dateTo = req.query.date_to ? new Date(req.query.date_to) : null;
+    const dateFrom = req.query.date_from ? parseDate(req.query.date_from) : null;
+    const dateTo = req.query.date_to ? parseDate(req.query.date_to) : null;
+
 
     const salesRows = await getSheetRows(SALES_RANGE);
     const expenseRows = await getSheetRows(EXPENSES_RANGE);
 
-    const filteredSales = salesRows.filter((row) => {
-      const date = parseDate(row['Дата']);
+    const filteredSales = salesRows.filter(row => {
+      const d = parseDate(row['Дата']);
       if (!dateFrom && !dateTo) return true;
-      return isWithinRange(date, dateFrom, dateTo);
+      return isWithinRange(d, dateFrom, dateTo);
     });
 
-    const filteredExpenses = expenseRows.filter((row) => {
-      const date = parseDate(row['Дата'] || row['Дата_рус']);
+    const filteredExpenses = expenseRows.filter(row => {
+      const d = parseDate(row['Дата'] || row['Дата_рус']);
       if (!dateFrom && !dateTo) return true;
-      return isWithinRange(date, dateFrom, dateTo);
+      return isWithinRange(d, dateFrom, dateTo);
     });
 
     let revenue = 0;
@@ -196,26 +200,39 @@ app.get('/analytics', async (req, res) => {
       const cost = toNumber(row['Себестоимость']);
       const comm = toNumber(row['Комиссия Kaspi']);
       const profit = rrc - cost - comm;
-      const channel = detectChannel(row);
 
       revenue += rrc;
       totalProfit += profit;
 
+      const channel = detectChannel(row);
+
       if (channel === 'Каспий') {
         kaspiRevenue += rrc;
         kaspiProfit += profit;
-        kaspiCount += 1;
+        kaspiCount++;
       } else {
         optRevenue += rrc;
         optProfit += profit;
-        optCount += 1;
+        optCount++;
       }
 
-      const name = (row['Наименование'] || 'Без названия').toString().trim();
-      const comment = (row['Комментарий'] || '').toString();
-      const lowerName = name.toLowerCase();
+      // 👉 ИМЯ ТОВАРА (главный фикс)
+      let name = (row['Наименование'] || '').toString().trim();
 
-      const isAriston = lowerName.includes('ariston');
+      if (!name) {
+        name = (row['Модель'] || '').toString().trim();
+      }
+
+      if (!name && row.__row && row.__row[2]) {
+        name = row.__row[2].toString().trim();
+      }
+
+      if (!name) {
+        name = 'Товар без имени';
+      }
+
+      const comment = (row['Комментарий'] || '').toString();
+      const isAriston = name.toLowerCase().includes('ariston');
       const isPlus = comment.includes('+');
 
       if (isAriston || isPlus) {
@@ -229,8 +246,7 @@ app.get('/analytics', async (req, res) => {
 
       const date = parseDate(row['Дата']);
       if (date) {
-        const key =
-            `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
+        const key = `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth()+1).toString().padStart(2, '0')}.${date.getFullYear()}`;
         dailyProfitMap[key] = (dailyProfitMap[key] || 0) + profit;
       }
     }
@@ -245,14 +261,7 @@ app.get('/analytics', async (req, res) => {
       .slice(0, 5);
 
     const dailyProfit = Object.entries(dailyProfitMap)
-      .map(([date, profit]) => ({ date, profit }))
-      .sort((a, b) => {
-        const pa = a.date.split('.');
-        const pb = b.date.split('.');
-        const da = new Date(pa[2], pa[1] - 1, pa[0]);
-        const db = new Date(pb[2], pb[1] - 1, pb[0]);
-        return db - da;
-      });
+      .map(([date, profit]) => ({ date, profit }));
 
     res.json({
       revenue,
@@ -263,8 +272,8 @@ app.get('/analytics', async (req, res) => {
       myNet: myProfit - totalExpenses / 2,
       alexNet: alexProfit - totalExpenses / 2,
       salesCount: filteredSales.length,
-      avgCheck: filteredSales.length ? revenue / filteredSales.length : 0,
-      avgProfit: filteredSales.length ? totalProfit / filteredSales.length : 0,
+      avgCheck: revenue / filteredSales.length || 0,
+      avgProfit: totalProfit / filteredSales.length || 0,
       margin: revenue ? (totalProfit / revenue) * 100 : 0,
       kaspiRevenue,
       kaspiProfit,
@@ -275,12 +284,13 @@ app.get('/analytics', async (req, res) => {
       topProducts,
       dailyProfit,
     });
-  } catch (error) {
-    console.error('Ошибка /analytics:', error);
+
+  } catch (e) {
+    console.error(e);
     res.status(500).send('Ошибка аналитики');
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
+  console.log('Server started on http://localhost:8080');
 });

@@ -3,20 +3,20 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String baseUrl = 'http://localhost:8080';
-  // Для Android эмулятора потом можно вернуть:
-  // static const String baseUrl = 'http://10.0.2.2:8080';
 
+  // ===== SALES =====
   static Future<List<Map<String, dynamic>>> fetchSales() async {
     final response = await http.get(Uri.parse('$baseUrl/sales'));
 
     if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки продаж: ${response.body}');
+      throw Exception('Ошибка загрузки продаж');
     }
 
     final data = jsonDecode(response.body);
     return List<Map<String, dynamic>>.from(data);
   }
 
+  // ===== ANALYTICS =====
   static Future<Map<String, dynamic>> fetchAnalytics({
     String? dateFrom,
     String? dateTo,
@@ -26,6 +26,7 @@ class ApiService {
     if (dateFrom != null && dateFrom.isNotEmpty) {
       query['date_from'] = dateFrom;
     }
+
     if (dateTo != null && dateTo.isNotEmpty) {
       query['date_to'] = dateTo;
     }
@@ -35,10 +36,45 @@ class ApiService {
     final response = await http.get(uri);
 
     if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки аналитики: ${response.body}');
+      throw Exception('Ошибка загрузки аналитики');
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  // ===== PLAN =====
+  static Future<List<Map<String, dynamic>>> fetchPlan() async {
+    final response = await http.get(Uri.parse('$baseUrl/plan'));
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка загрузки плана');
     }
 
     final data = jsonDecode(response.body);
-    return Map<String, dynamic>.from(data);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  // ===== INVESTMENTS =====
+  static Future<List<Map<String, dynamic>>> fetchInvestments() async {
+    final response = await http.get(Uri.parse('$baseUrl/investments'));
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка загрузки вложений');
+    }
+
+    final data = jsonDecode(response.body);
+    return List<Map<String, dynamic>>.from(data);
+  }
+
+  // ===== DISTRIBUTION =====
+  static Future<List<Map<String, dynamic>>> fetchDistribution() async {
+    final response = await http.get(Uri.parse('$baseUrl/distribution'));
+
+    if (response.statusCode != 200) {
+      throw Exception('Ошибка загрузки распределения');
+    }
+
+    final data = jsonDecode(response.body);
+    return List<Map<String, dynamic>>.from(data);
   }
 }

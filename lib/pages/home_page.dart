@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 
@@ -7,8 +11,210 @@ import 'analytics_page.dart';
 import 'create_order_page.dart';
 import 'expenses_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _analytics;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAnalytics();
+  }
+
+  String get _baseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:8080';
+    }
+    return 'http://10.0.2.2:8080';
+  }
+
+  Future<void> _loadAnalytics() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/analytics'));
+
+      if (response.statusCode != 200) {
+        throw Exception('Ошибка ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      setState(() {
+        _analytics = data;
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _error = 'Не удалось загрузить данные';
+        _loading = false;
+      });
+    }
+  }
+
+  double _toDouble(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString().replaceAll(',', '.')) ?? 0;
+  }
+
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  String _formatMoney(dynamic value) {
+    final number = _toDouble(value).round();
+    final raw = number.toString();
+    final buffer = StringBuffer();
+
+    int counter = 0;
+    for (int i = raw.length - 1; i >= 0; i--) {
+      buffer.write(raw[i]);
+      counter++;
+      if (counter % 3 == 0 && i != 0) {
+        buffer.write(' ');
+      }
+    }
+
+    return '${buffer.toString().split('').reversed.join()} ₸';
+  }
+
+  String _formatPercent(dynamic value) {
+    return '${_toDouble(value).toStringAsFixed(1)}%';
+  }
+
+  DateTime? _parseRuDate(String value) {
+    try {
+      final parts = value.split('.');
+      if (parts.length != 3) return null;
+
+      final day = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final year = int.parse(parts[2]);
+
+      return DateTime(year, month, day);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double _todayProfit() {
+    final list = (_analytics?['dailyProfit'] as List?) ?? [];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    for (final item in list) {
+      if (item is Map<String, dynamic>) {
+        final date = _parseRuDate(item['date']?.toString() ?? '');
+        if (date != null &&
+            date.year == today.year &&
+            date.month == today.month &&
+            date.day == today.day) {
+          return _toDouble(item['profit']);
+        }
+      }
+    }
+
+    return 0;
+  }
+
+  double _last7DaysProfit() {
+    final list = (_analytics?['dailyProfit'] as List?) ?? [];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    double sum = 0;
+
+    for (final item in list) {
+      if (item is Map<String, dynamic>) {
+        final date = _parseRuDate(item['date']?.toString() ?? '');
+        if (date == null) continue;
+
+        final current = DateTime(date.year, date.month, date.day);
+        final difference = today.difference(current).inDays;
+
+        if (difference >= 0 && difference < 7) {
+          sum += _toDouble(item['profit']);
+        }
+      }
+    }
+
+    return sum;
+  }
+
+  String _channelLeaderText() {
+    final kaspiProfit = _toDouble(_analytics?['kaspiProfit']);
+    final optProfit = _toDouble(_analytics?['optProfit']);
+
+    if (kaspiProfit == 0 && optProfit == 0) {
+      return 'Данные по каналам пока недоступны.';
+    }
+
+    if (kaspiProfit >= optProfit) {
+      return 'Сейчас Каспий даёт больше прибыли, чем ОПТ.';
+    }
+
+    return 'Сейчас ОПТ даёт больше прибыли, чем Каспий.';
+  }
+
+  String _topProductText() {
+    final topProducts = (_analytics?['topProducts'] as List?) ?? [];
+    if (topProducts.isEmpty) {
+      return 'Топовый товар появится после загрузки аналитики.';
+    }
+
+    final first = topProducts.first;
+    if (first is Map<String, dynamic>) {
+      final name = first['name']?.toString() ?? 'Без названия';
+      final profit = _formatMoney(first['profit']);
+      return 'Лидер по прибыли сейчас: $name — $profit.';
+    }
+
+    return 'Топовый товар появится после загрузки аналитики.';
+  }
+
+  String _partnerText() {
+    final myNet = _formatMoney(_analytics?['myNet']);
+    final alexNet = _formatMoney(_analytics?['alexNet']);
+    return 'На руки сейчас: Стас — $myNet, Алексей — $alexNet.';
+  }
+
+  List<Map<String, dynamic>> _topProductsList() {
+    final raw = (_analytics?['topProducts'] as List?) ?? [];
+
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map((e) => {
+      'name': e['name']?.toString() ?? 'Без названия',
+      'profit': _toDouble(e['profit']),
+    })
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _dailyProfitList() {
+    final raw = (_analytics?['dailyProfit'] as List?) ?? [];
+
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map((e) => {
+      'date': e['date']?.toString() ?? '',
+      'profit': _toDouble(e['profit']),
+    })
+        .toList();
+  }
 
   Widget _quickActionCard({
     required BuildContext context,
@@ -188,8 +394,183 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  Widget _smallChart() {
+    final list = _dailyProfitList();
+    final last = list.length > 7 ? list.sublist(list.length - 7) : list;
+
+    if (last.isEmpty) {
+      return const Text(
+        'Нет данных для графика',
+        style: TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 13,
+        ),
+      );
+    }
+
+    double max = 0;
+    for (final item in last) {
+      final value = _toDouble(item['profit']);
+      if (value > max) max = value;
+    }
+
+    return SizedBox(
+      height: 110,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: last.map((item) {
+          final value = _toDouble(item['profit']);
+          final date = item['date']?.toString() ?? '';
+          final shortDate = date.length >= 5 ? date.substring(0, 5) : date;
+          final double h =
+          max == 0 ? 10.0 : ((value / max) * 70).toDouble();
+
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Container(
+                    height: 70,
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      height: h,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xFF4DA3FF),
+                            Color(0xFF2D7DFF),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    shortDate,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _top5Compact() {
+    final list = _topProductsList();
+
+    if (list.isEmpty) {
+      return const Text(
+        'Нет данных по товарам',
+        style: TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 13,
+        ),
+      );
+    }
+
+    final visible = list.length > 5 ? list.sublist(0, 5) : list;
+
+    return Column(
+      children: List.generate(visible.length, (index) {
+        final item = visible[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  item['name']?.toString() ?? 'Без названия',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                _formatMoney(item['profit']),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _partnerCompact() {
+    return Column(
+      children: [
+        _miniSummaryRow(
+          label: 'Стас чистыми',
+          value: _formatMoney(_analytics?['myNet']),
+          accent: const Color(0xFFF59E0B),
+        ),
+        _miniSummaryRow(
+          label: 'Алексей чистыми',
+          value: _formatMoney(_analytics?['alexNet']),
+          accent: const Color(0xFF8B5CF6),
+        ),
+        _miniSummaryRow(
+          label: 'Общая прибыль',
+          value: _formatMoney(_analytics?['totalProfit']),
+          accent: const Color(0xFF22C55E),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    print('ANALYTICS = $_analytics');
+    final todayProfit = _formatMoney(_todayProfit());
+    final last7Profit = _formatMoney(_last7DaysProfit());
+    final kaspiProfit = _formatMoney(_analytics?['kaspiProfit']);
+    final optProfit = _formatMoney(_analytics?['optProfit']);
+    final count = _toInt(_analytics?['salesCount'] ?? 0).toString();
+    final avgCheck = _formatMoney(_analytics?['avgCheck']);
+    final margin = _formatPercent(_analytics?['margin']);
+    final expenses = _formatMoney(_analytics?['expenses']);
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -203,15 +584,64 @@ class HomePage extends StatelessWidget {
             fontSize: 24,
           ),
         ),
+        actions: [
+          IconButton(
+            onPressed: _loadAnalytics,
+            icon: const Icon(Icons.refresh_rounded, color: AppColors.textMain),
+          ),
+        ],
       ),
-      body: ListView(
+      body: _loading
+          ? const Center(
+        child: CircularProgressIndicator(),
+      )
+          : _error != null
+          ? Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                size: 44,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Проверь, что backend запущен на 8080.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadAnalytics,
+                child: const Text('Повторить'),
+              ),
+            ],
+          ),
+        ),
+      )
+          : ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
         children: [
           Container(
             padding: const EdgeInsets.all(20),
             decoration: AppUi.cardDecoration(
               radius: 28,
-              borderColor: const Color(0xFF4DA3FF).withOpacity(0.22),
+              borderColor:
+              const Color(0xFF4DA3FF).withOpacity(0.22),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -235,7 +665,7 @@ class HomePage extends StatelessWidget {
                   'TechnoOpt',
                   style: TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 13,
+                    fontSize: 17,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -251,7 +681,7 @@ class HomePage extends StatelessWidget {
                 ),
                 SizedBox(height: 10),
                 Text(
-                  'Продажи, аналитика, расходы и план в одном месте. Главный экран теперь показывает не меню, а полезную картину по бизнесу.',
+                  'Распределение прибыли, маржинальность, расходы, аналитика продаж.',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 14,
@@ -262,14 +692,13 @@ class HomePage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-
           Row(
             children: [
               Expanded(
                 child: AppUi.metricCard(
                   icon: Icons.payments_outlined,
                   title: 'Сегодня',
-                  value: 'Скоро подключим',
+                  value: todayProfit,
                   accentColors: const [
                     Color(0xFF4DA3FF),
                     Color(0xFF2D7DFF),
@@ -281,7 +710,7 @@ class HomePage extends StatelessWidget {
                 child: AppUi.metricCard(
                   icon: Icons.trending_up_outlined,
                   title: '7 дней',
-                  value: 'Скоро подключим',
+                  value: last7Profit,
                   accentColors: const [
                     Color(0xFF22C55E),
                     Color(0xFF16A34A),
@@ -291,14 +720,13 @@ class HomePage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-
           Row(
             children: [
               Expanded(
                 child: AppUi.metricCard(
                   icon: Icons.storefront_outlined,
                   title: 'Каспий',
-                  value: 'Скоро подключим',
+                  value: kaspiProfit,
                   accentColors: const [
                     Color(0xFF8B5CF6),
                     Color(0xFF6D28D9),
@@ -311,7 +739,7 @@ class HomePage extends StatelessWidget {
                 child: AppUi.metricCard(
                   icon: Icons.local_shipping_outlined,
                   title: 'ОПТ',
-                  value: 'Скоро подключим',
+                  value: optProfit,
                   accentColors: const [
                     Color(0xFFF59E0B),
                     Color(0xFFD97706),
@@ -321,9 +749,7 @@ class HomePage extends StatelessWidget {
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
           AppUi.sectionCard(
             title: 'Быстрые действия',
             icon: Icons.flash_on_rounded,
@@ -347,7 +773,8 @@ class HomePage extends StatelessWidget {
                     _quickActionCard(
                       context: context,
                       title: 'Добавить расход',
-                      subtitle: 'Занести расход и назначить владельца',
+                      subtitle:
+                      'Занести расход и назначить владельца',
                       icon: Icons.receipt_long_outlined,
                       colors: const [
                         Color(0xFFEF4444),
@@ -388,9 +815,7 @@ class HomePage extends StatelessWidget {
               ],
             ),
           ),
-
           const SizedBox(height: 16),
-
           AppUi.sectionCard(
             title: 'Короткая сводка',
             icon: Icons.grid_view_rounded,
@@ -399,30 +824,28 @@ class HomePage extends StatelessWidget {
               children: [
                 _miniSummaryRow(
                   label: 'Продажи за период',
-                  value: 'Скоро',
+                  value: count,
                   accent: const Color(0xFF4DA3FF),
                 ),
                 _miniSummaryRow(
                   label: 'Средний чек',
-                  value: 'Скоро',
+                  value: avgCheck,
                   accent: const Color(0xFF22C55E),
                 ),
                 _miniSummaryRow(
                   label: 'Маржинальность',
-                  value: 'Скоро',
+                  value: margin,
                   accent: const Color(0xFF8B5CF6),
                 ),
                 _miniSummaryRow(
                   label: 'Расходы',
-                  value: 'Скоро',
+                  value: expenses,
                   accent: const Color(0xFFEF4444),
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 16),
-
           AppUi.sectionCard(
             title: 'Инсайты',
             icon: Icons.auto_awesome_rounded,
@@ -431,7 +854,7 @@ class HomePage extends StatelessWidget {
               children: [
                 _insightCard(
                   title: 'По каналам',
-                  text: 'Здесь можно будет показывать, какой канал даёт больше прибыли: Каспий или ОПТ.',
+                  text: _channelLeaderText(),
                   icon: Icons.compare_arrows_rounded,
                   colors: const [
                     Color(0xFF06B6D4),
@@ -440,7 +863,7 @@ class HomePage extends StatelessWidget {
                 ),
                 _insightCard(
                   title: 'По товарам',
-                  text: 'Здесь появится топовый товар по прибыли и товары, которые тянут результат вверх.',
+                  text: _topProductText(),
                   icon: Icons.workspace_premium_outlined,
                   colors: const [
                     Color(0xFFF59E0B),
@@ -449,7 +872,7 @@ class HomePage extends StatelessWidget {
                 ),
                 _insightCard(
                   title: 'Для партнёра',
-                  text: 'Позже на главной можно показывать ключевые цифры, которые удобно обсуждать с Алексеем.',
+                  text: _partnerText(),
                   icon: Icons.groups_outlined,
                   colors: const [
                     Color(0xFF8B5CF6),
@@ -459,19 +882,26 @@ class HomePage extends StatelessWidget {
               ],
             ),
           ),
-
           const SizedBox(height: 16),
-
-          AppUi.infoBlock(
-            title: 'Что дальше',
-            icon: Icons.auto_awesome,
-            accent: const Color(0xFF22C55E),
-            items: const [
-              'Подключим реальные данные',
-              'Добавим графики',
-              'Сделаем топ товаров',
-              'Сделаем отчёт для партнёра',
-            ],
+          AppUi.sectionCard(
+            title: 'График',
+            icon: Icons.show_chart_rounded,
+            accent: const Color(0xFF4DA3FF),
+            child: _smallChart(),
+          ),
+          const SizedBox(height: 16),
+          AppUi.sectionCard(
+            title: 'Топ-5',
+            icon: Icons.workspace_premium_outlined,
+            accent: const Color(0xFFF59E0B),
+            child: _top5Compact(),
+          ),
+          const SizedBox(height: 16),
+          AppUi.sectionCard(
+            title: 'Для партнёра',
+            icon: Icons.groups_rounded,
+            accent: const Color(0xFF8B5CF6),
+            child: _partnerCompact(),
           ),
         ],
       ),
