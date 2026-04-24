@@ -1,9 +1,102 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 
-class PlanPage extends StatelessWidget {
+class PlanPage extends StatefulWidget {
   const PlanPage({super.key});
+
+  @override
+  State<PlanPage> createState() => _PlanPageState();
+}
+
+class _PlanPageState extends State<PlanPage> {
+  bool isLoading = true;
+  String? error;
+
+  Map<String, dynamic> plan = {};
+  Map<String, dynamic> analytics = {};
+
+  @override
+  void initState() {
+    super.initState();
+    loadData();
+  }
+
+  String _apiDate(DateTime d) {
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  String _ruDate(DateTime d) {
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  }
+
+  Future<void> loadData() async {
+    try {
+      setState(() {
+        isLoading = true;
+        error = null;
+      });
+
+      final now = DateTime.now();
+      final from = DateTime(now.year, now.month, 1);
+
+      final planUrl = Uri.parse('http://localhost:8080/plan');
+
+      final analyticsUrl = Uri.parse(
+        'http://localhost:8080/analytics'
+            '?date_from=${_apiDate(from)}'
+            '&date_to=${_apiDate(now)}',
+      );
+
+      final responses = await Future.wait([
+        http.get(planUrl),
+        http.get(analyticsUrl),
+      ]);
+
+      final planResponse = responses[0];
+      final analyticsResponse = responses[1];
+
+      if (planResponse.statusCode != 200) {
+        throw Exception('Ошибка /plan: ${planResponse.body}');
+      }
+
+      if (analyticsResponse.statusCode != 200) {
+        throw Exception('Ошибка /analytics: ${analyticsResponse.body}');
+      }
+
+      setState(() {
+        plan = jsonDecode(planResponse.body);
+        analytics = jsonDecode(analyticsResponse.body);
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        error = e.toString();
+        isLoading = false;
+      });
+    }
+  }
+
+  double _numFrom(Map<String, dynamic> source, String key) {
+    final value = source[key];
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+
+    return double.tryParse(
+      value.toString().replaceAll(' ', '').replaceAll(',', '.'),
+    ) ??
+        0;
+  }
+
+  String _money(num value) {
+    return '${value.round().toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]} ',
+    )} ₸';
+  }
 
   Widget _scenarioCard({
     required String title,
@@ -70,7 +163,7 @@ class PlanPage extends StatelessWidget {
   Widget _planFactCard({
     required String title,
     required String fact,
-    required String plan,
+    required String planText,
     required double progress,
     required List<Color> accentColors,
   }) {
@@ -81,8 +174,8 @@ class PlanPage extends StatelessWidget {
       child: AppUi.progressBlock(
         title: 'Факт / План',
         currentLabel: fact,
-        totalLabel: plan,
-        progress: progress,
+        totalLabel: planText,
+        progress: progress.clamp(0.0, 1.0),
         accentColors: accentColors,
       ),
     );
@@ -90,6 +183,26 @@ class PlanPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final from = DateTime(now.year, now.month, 1);
+
+    final month = plan['month']?.toString() ?? '';
+
+    // ПЛАН — из app_plan
+    final planProfit = _numFrom(plan, 'plan_profit');
+    final planKaspi = _numFrom(plan, 'plan_kaspi');
+    final planOpt = _numFrom(plan, 'plan_opt');
+
+    // ФАКТ — из реальных продаж /analytics
+    final factRevenue = _numFrom(analytics, 'revenue');
+    final factProfit = _numFrom(analytics, 'totalProfit');
+    final factKaspi = _numFrom(analytics, 'kaspiProfit');
+    final factOpt = _numFrom(analytics, 'optProfit');
+
+    // Пока план выручки отдельной колонкой нет — оставляем 10 млн.
+    // Позже добавим колонку plan_revenue в app_plan и заменим.
+    const planRevenue = 10000000.0;
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -103,8 +216,29 @@ class PlanPage extends StatelessWidget {
             fontSize: 24,
           ),
         ),
+        actions: [
+          IconButton(
+            onPressed: loadData,
+            icon: const Icon(Icons.refresh, color: AppColors.textMain),
+          ),
+        ],
       ),
-      body: ListView(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : error != null
+          ? Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            error!,
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      )
+          : ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
         children: [
           Container(
@@ -128,22 +262,22 @@ class PlanPage extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'План и модель',
-                  style: TextStyle(
+                  'План и модель\n$month',
+                  style: const TextStyle(
                     color: AppColors.textMain,
                     fontSize: 30,
                     fontWeight: FontWeight.w900,
-                    height: 1.0,
+                    height: 1.05,
                   ),
                 ),
-                SizedBox(height: 10),
+                const SizedBox(height: 10),
                 Text(
-                  'Здесь будет годовой план, сценарии по вложениям, сезонность и наглядная логика распределения прибыли.',
-                  style: TextStyle(
+                  'Факт считается из продаж: ${_ruDate(from)} — ${_ruDate(now)}',
+                  style: const TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 14,
                     height: 1.45,
@@ -159,8 +293,8 @@ class PlanPage extends StatelessWidget {
               Expanded(
                 child: AppUi.metricCard(
                   icon: Icons.payments_outlined,
-                  title: 'План выручки',
-                  value: '10 000 000 ₸',
+                  title: 'Факт выручки',
+                  value: _money(factRevenue),
                   accentColors: const [
                     Color(0xFF4DA3FF),
                     Color(0xFF2D7DFF),
@@ -172,7 +306,7 @@ class PlanPage extends StatelessWidget {
                 child: AppUi.metricCard(
                   icon: Icons.trending_up_outlined,
                   title: 'План прибыли',
-                  value: '800 000 ₸',
+                  value: _money(planProfit),
                   accentColors: const [
                     Color(0xFF22C55E),
                     Color(0xFF16A34A),
@@ -216,9 +350,9 @@ class PlanPage extends StatelessWidget {
 
           _planFactCard(
             title: 'План / факт по выручке',
-            fact: '5 400 000 ₸',
-            plan: '10 000 000 ₸',
-            progress: 0.54,
+            fact: _money(factRevenue),
+            planText: _money(planRevenue),
+            progress: planRevenue == 0 ? 0 : factRevenue / planRevenue,
             accentColors: const [
               Color(0xFF4DA3FF),
               Color(0xFF2D7DFF),
@@ -228,13 +362,46 @@ class PlanPage extends StatelessWidget {
 
           _planFactCard(
             title: 'План / факт по прибыли',
-            fact: '304 000 ₸',
-            plan: '800 000 ₸',
-            progress: 0.38,
+            fact: _money(factProfit),
+            planText: _money(planProfit),
+            progress: planProfit == 0 ? 0 : factProfit / planProfit,
             accentColors: const [
               Color(0xFF22C55E),
               Color(0xFF16A34A),
             ],
+          ),
+          const SizedBox(height: 16),
+
+          AppUi.sectionCard(
+            title: 'План по каналам',
+            icon: Icons.view_week_outlined,
+            accent: const Color(0xFF4DA3FF),
+            child: Column(
+              children: [
+                _planFactCard(
+                  title: 'Kaspi',
+                  fact: _money(factKaspi),
+                  planText: _money(planKaspi),
+                  progress:
+                  planKaspi == 0 ? 0 : factKaspi / planKaspi,
+                  accentColors: const [
+                    Color(0xFF06B6D4),
+                    Color(0xFF0891B2),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _planFactCard(
+                  title: 'ОПТ',
+                  fact: _money(factOpt),
+                  planText: _money(planOpt),
+                  progress: planOpt == 0 ? 0 : factOpt / planOpt,
+                  accentColors: const [
+                    Color(0xFFF59E0B),
+                    Color(0xFFD97706),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -271,28 +438,14 @@ class PlanPage extends StatelessWidget {
           const SizedBox(height: 16),
 
           AppUi.infoBlock(
-            title: 'Что сюда подключим дальше',
-            icon: Icons.auto_awesome_rounded,
-            accent: const Color(0xFFF59E0B),
-            items: const [
-              'Помесячный план продаж',
-              'План-факт по сезонам',
-              'Сценарии вложений Стаса и Алексея',
-              'Объяснение логики для партнера',
-              'Привязку к реальным данным из продаж',
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          AppUi.infoBlock(
-            title: 'Для чего нужен этот экран',
-            icon: Icons.lightbulb_outline,
+            title: 'Логика экрана',
+            icon: Icons.info_outline,
             accent: const Color(0xFF4DA3FF),
             items: const [
-              'Показать партнеру понятную бизнес-логику',
-              'Сравнить модели распределения',
-              'Следить за выполнением месячного и годового плана',
-              'Принимать решения по вложениям и сезонности',
+              'План берется из листа app_plan',
+              'Факт берется из реальных продаж через analytics',
+              'Период факта: с 1 числа текущего месяца по сегодня',
+              'План выручки пока временно 10 000 000 ₸',
             ],
           ),
         ],
