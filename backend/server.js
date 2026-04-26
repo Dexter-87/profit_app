@@ -19,6 +19,7 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
+const sheets = google.sheets({ version:'v4', auth});
 function toNumber(value) {
   if (!value) return 0;
   if (typeof value === 'number') return value;
@@ -89,7 +90,7 @@ async function getSheetRows(range) {
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range,
+    range: range,
   });
 
   return normalizeRows(res.data.values || []);
@@ -288,6 +289,57 @@ app.get('/analytics', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).send('Ошибка аналитики');
+  }
+});
+
+app.get('/plan', async (req, res) => {
+  try {
+    const sheet = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'app_plan!A2:L20',
+    });
+
+    const rows = sheet.data.values || [];
+
+    const monthNames = [
+      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+    ];
+
+    const currentMonthName = monthNames[new Date().getMonth()];
+
+    const row = rows.find((r) =>
+      String(r[0] || '').trim().toLowerCase() ===
+      currentMonthName.toLowerCase()
+    );
+
+    if (!row) {
+      return res.status(404).json({
+        error: 'Месяц не найден',
+        currentMonthName,
+        availableMonths: rows.map((r) => r[0]),
+      });
+    }
+
+    res.json({
+      month: row[0],
+      plan_profit: toNumber(row[2]),
+      fact_profit_from_plan: toNumber(row[3]),
+      percent_from_plan: toNumber(row[4]),
+      plan_qty: toNumber(row[5]),
+      plan_kaspi: toNumber(row[6]),
+      fact_kaspi_from_plan: toNumber(row[7]),
+      kaspi_percent_from_plan: toNumber(row[8]),
+      plan_opt: toNumber(row[9]),
+      fact_opt_from_plan: toNumber(row[10]),
+      opt_percent_from_plan: toNumber(row[11]),
+    });
+  } catch (error) {
+    console.error('Ошибка /plan:', error);
+    res.status(500).json({
+      error: 'Ошибка получения плана',
+      details: error.message,
+    });
   }
 });
 
