@@ -23,17 +23,35 @@ class _HomePageState extends State<HomePage> {
   String? _error;
   Map<String, dynamic>? _analytics;
 
+  String _period = 'Все';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
   @override
   void initState() {
     super.initState();
+    _setAll(load: false);
     _loadAnalytics();
   }
 
   String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:8080';
-    }
+    if (kIsWeb) return 'http://localhost:8080';
     return 'http://10.0.2.2:8080';
+  }
+
+  String _apiDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  String _uiDate(DateTime? date) {
+    if (date == null) return 'Не выбрано';
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y/$m/$d';
   }
 
   Future<void> _loadAnalytics() async {
@@ -43,7 +61,21 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/analytics'));
+      final params = <String, String>{};
+
+      if (_dateFrom != null) {
+        params['date_from'] = _apiDate(_dateFrom!);
+      }
+
+      if (_dateTo != null) {
+        params['date_to'] = _apiDate(_dateTo!);
+      }
+
+      final uri = Uri.parse('$_baseUrl/analytics').replace(
+        queryParameters: params.isEmpty ? null : params,
+      );
+
+      final response = await http.get(uri);
 
       if (response.statusCode != 200) {
         throw Exception('Ошибка ${response.statusCode}');
@@ -63,10 +95,103 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _setToday() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _period = 'Сегодня';
+      _dateFrom = today;
+      _dateTo = today;
+    });
+
+    _loadAnalytics();
+  }
+
+  void _setLastDays(int days) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _period = '$days дней';
+      _dateFrom = today.subtract(Duration(days: days - 1));
+      _dateTo = today;
+    });
+
+    _loadAnalytics();
+  }
+
+  void _setAll({bool load = true}) {
+    setState(() {
+      _period = 'Все';
+      _dateFrom = null;
+      _dateTo = null;
+    });
+
+    if (load) _loadAnalytics();
+  }
+
+  Future<void> _pickFromDate() async {
+    final now = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateFrom ?? now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _period = 'Период';
+      _dateFrom = DateTime(picked.year, picked.month, picked.day);
+
+      if (_dateTo != null && _dateFrom!.isAfter(_dateTo!)) {
+        _dateTo = _dateFrom;
+      }
+    });
+
+    _loadAnalytics();
+  }
+
+  Future<void> _pickToDate() async {
+    final now = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateTo ?? now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _period = 'Период';
+      _dateTo = DateTime(picked.year, picked.month, picked.day);
+
+      if (_dateFrom != null && _dateTo!.isBefore(_dateFrom!)) {
+        _dateFrom = _dateTo;
+      }
+    });
+
+    _loadAnalytics();
+  }
+
   double _toDouble(dynamic value) {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
-    return double.tryParse(value.toString().replaceAll(',', '.')) ?? 0;
+
+    return double.tryParse(
+      value
+          .toString()
+          .replaceAll('₸', '')
+          .replaceAll('%', '')
+          .replaceAll(' ', '')
+          .replaceAll(',', '.'),
+    ) ??
+        0;
   }
 
   int _toInt(dynamic value) {
@@ -97,62 +222,9 @@ class _HomePageState extends State<HomePage> {
     return '${_toDouble(value).toStringAsFixed(1)}%';
   }
 
-  DateTime? _parseRuDate(String value) {
-    try {
-      final parts = value.split('.');
-      if (parts.length != 3) return null;
-
-      final day = int.parse(parts[0]);
-      final month = int.parse(parts[1]);
-      final year = int.parse(parts[2]);
-
-      return DateTime(year, month, day);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  double _todayProfit() {
-    final list = (_analytics?['dailyProfit'] as List?) ?? [];
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        final date = _parseRuDate(item['date']?.toString() ?? '');
-        if (date != null &&
-            date.year == today.year &&
-            date.month == today.month &&
-            date.day == today.day) {
-          return _toDouble(item['profit']);
-        }
-      }
-    }
-
-    return 0;
-  }
-
-  double _last7DaysProfit() {
-    final list = (_analytics?['dailyProfit'] as List?) ?? [];
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    double sum = 0;
-
-    for (final item in list) {
-      if (item is Map<String, dynamic>) {
-        final date = _parseRuDate(item['date']?.toString() ?? '');
-        if (date == null) continue;
-
-        final current = DateTime(date.year, date.month, date.day);
-        final difference = today.difference(current).inDays;
-
-        if (difference >= 0 && difference < 7) {
-          sum += _toDouble(item['profit']);
-        }
-      }
-    }
-
-    return sum;
+  String _periodText() {
+    if (_dateFrom == null && _dateTo == null) return 'Весь период';
+    return '${_uiDate(_dateFrom)} — ${_uiDate(_dateTo)}';
   }
 
   String _channelLeaderText() {
@@ -189,7 +261,7 @@ class _HomePageState extends State<HomePage> {
   String _partnerText() {
     final myNet = _formatMoney(_analytics?['myNet']);
     final alexNet = _formatMoney(_analytics?['alexNet']);
-    return 'На руки сейчас: Стас — $myNet, Алексей — $alexNet.';
+    return 'На руки за период: Стас — $myNet, Алексей — $alexNet.';
   }
 
   List<Map<String, dynamic>> _topProductsList() {
@@ -214,6 +286,129 @@ class _HomePageState extends State<HomePage> {
       'profit': _toDouble(e['profit']),
     })
         .toList();
+  }
+
+  Widget _periodButton(String title, VoidCallback onTap) {
+    final active = _period == title;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active
+                ? const Color(0xFF4DA3FF).withOpacity(0.22)
+                : Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: active
+                  ? const Color(0xFF4DA3FF).withOpacity(0.55)
+                  : AppColors.stroke,
+            ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: active ? AppColors.textMain : AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dateBox({
+    required String label,
+    required DateTime? date,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.stroke),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _uiDate(date),
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _filterCard() {
+    return AppUi.sectionCard(
+      title: 'Период',
+      icon: Icons.date_range_rounded,
+      accent: const Color(0xFF4DA3FF),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _periodButton('Сегодня', _setToday),
+              const SizedBox(width: 8),
+              _periodButton('7 дней', () => _setLastDays(7)),
+              const SizedBox(width: 8),
+              _periodButton('30 дней', () => _setLastDays(30)),
+              const SizedBox(width: 8),
+              _periodButton('Все', _setAll),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _dateBox(
+                label: 'С',
+                date: _dateFrom,
+                onTap: _pickFromDate,
+              ),
+              const SizedBox(width: 12),
+              _dateBox(
+                label: 'По',
+                date: _dateTo,
+                onTap: _pickToDate,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Сейчас считается: ${_periodText()}',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _quickActionCard({
@@ -396,9 +591,9 @@ class _HomePageState extends State<HomePage> {
 
   Widget _smallChart() {
     final list = _dailyProfitList();
-    final last = list.length > 7 ? list.sublist(list.length - 7) : list;
+    final visible = list.length > 14 ? list.sublist(list.length - 14) : list;
 
-    if (last.isEmpty) {
+    if (visible.isEmpty) {
       return const Text(
         'Нет данных для графика',
         style: TextStyle(
@@ -409,7 +604,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     double max = 0;
-    for (final item in last) {
+    for (final item in visible) {
       final value = _toDouble(item['profit']);
       if (value > max) max = value;
     }
@@ -418,12 +613,11 @@ class _HomePageState extends State<HomePage> {
       height: 110,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
-        children: last.map((item) {
+        children: visible.map((item) {
           final value = _toDouble(item['profit']);
           final date = item['date']?.toString() ?? '';
           final shortDate = date.length >= 5 ? date.substring(0, 5) : date;
-          final double h =
-          max == 0 ? 10.0 : ((value / max) * 70).toDouble();
+          final double h = max == 0 ? 10.0 : ((value / max) * 70).toDouble();
 
           return Expanded(
             child: Padding(
@@ -487,6 +681,7 @@ class _HomePageState extends State<HomePage> {
     return Column(
       children: List.generate(visible.length, (index) {
         final item = visible[index];
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
@@ -561,9 +756,11 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    print('ANALYTICS = $_analytics');
-    final todayProfit = _formatMoney(_todayProfit());
-    final last7Profit = _formatMoney(_last7DaysProfit());
+    final periodProfit = _formatMoney(_analytics?['totalProfit']);
+    final periodNet = _formatMoney(
+      _toDouble(_analytics?['totalProfit']) - _toDouble(_analytics?['expenses']),
+    );
+
     final kaspiProfit = _formatMoney(_analytics?['kaspiProfit']);
     final optProfit = _formatMoney(_analytics?['optProfit']);
     final count = _toInt(_analytics?['salesCount'] ?? 0).toString();
@@ -592,9 +789,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: _loading
-          ? const Center(
-        child: CircularProgressIndicator(),
-      )
+          ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? Center(
         child: Padding(
@@ -692,13 +887,15 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 16),
+          _filterCard(),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: AppUi.metricCard(
                   icon: Icons.payments_outlined,
-                  title: 'Сегодня',
-                  value: todayProfit,
+                  title: 'Прибыль за период',
+                  value: periodProfit,
                   accentColors: const [
                     Color(0xFF4DA3FF),
                     Color(0xFF2D7DFF),
@@ -709,8 +906,8 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: AppUi.metricCard(
                   icon: Icons.trending_up_outlined,
-                  title: '7 дней',
-                  value: last7Profit,
+                  title: 'Чистая прибыль',
+                  value: periodNet,
                   accentColors: const [
                     Color(0xFF22C55E),
                     Color(0xFF16A34A),
@@ -773,8 +970,7 @@ class _HomePageState extends State<HomePage> {
                     _quickActionCard(
                       context: context,
                       title: 'Добавить расход',
-                      subtitle:
-                      'Занести расход и назначить владельца',
+                      subtitle: 'Занести расход и назначить владельца',
                       icon: Icons.receipt_long_outlined,
                       colors: const [
                         Color(0xFFEF4444),
@@ -822,6 +1018,11 @@ class _HomePageState extends State<HomePage> {
             accent: const Color(0xFFF59E0B),
             child: Column(
               children: [
+                _miniSummaryRow(
+                  label: 'Период',
+                  value: _periodText(),
+                  accent: const Color(0xFF06B6D4),
+                ),
                 _miniSummaryRow(
                   label: 'Продажи за период',
                   value: count,

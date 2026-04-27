@@ -22,6 +22,10 @@ class _PlanPageState extends State<PlanPage> {
 
   String _selectedModel = 'Текущая модель';
 
+  String _period = 'Месяц';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
   @override
   void initState() {
     super.initState();
@@ -107,6 +111,21 @@ class _PlanPageState extends State<PlanPage> {
         '${date.day.toString().padLeft(2, '0')}';
   }
 
+  String _uiDate(DateTime? date) {
+    if (date == null) return '-';
+    return '${date.year.toString().padLeft(4, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _periodText() {
+    if (_period == 'Месяц') {
+      return 'Месяц: ${(_selectedPlan?['month'] ?? '').toString()}';
+    }
+
+    return '${_uiDate(_dateFrom)} — ${_uiDate(_dateTo)}';
+  }
+
   dynamic _distValue(String metric, String column) {
     final row = _distributionRows.firstWhere(
           (r) => (r['metric'] ?? '').toString().trim() == metric,
@@ -140,7 +159,7 @@ class _PlanPageState extends State<PlanPage> {
         _selectedPlan = selected;
       });
 
-      await _loadMonthAnalytics(selected);
+      await _loadAnalyticsForPeriod(selected);
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -149,13 +168,21 @@ class _PlanPageState extends State<PlanPage> {
     }
   }
 
-  Future<void> _loadMonthAnalytics(Map<String, dynamic> planRow) async {
+  Future<void> _loadAnalyticsForPeriod(Map<String, dynamic> planRow) async {
     final monthName = (planRow['month'] ?? '').toString();
     final month = _monthNumber(monthName);
     const year = 2026;
 
-    final from = DateTime(year, month, 1);
-    final to = DateTime(year, month + 1, 0);
+    DateTime from;
+    DateTime to;
+
+    if (_period == 'Месяц') {
+      from = DateTime(year, month, 1);
+      to = DateTime(year, month + 1, 0);
+    } else {
+      from = _dateFrom ?? DateTime(year, month, 1);
+      to = _dateTo ?? DateTime(year, month + 1, 0);
+    }
 
     final data = await ApiService.fetchAnalytics(
       dateFrom: _apiDate(from),
@@ -171,10 +198,101 @@ class _PlanPageState extends State<PlanPage> {
   Future<void> _selectMonth(Map<String, dynamic> row) async {
     setState(() {
       _selectedPlan = row;
+      _period = 'Месяц';
+      _dateFrom = null;
+      _dateTo = null;
       _isLoading = true;
     });
 
-    await _loadMonthAnalytics(row);
+    await _loadAnalyticsForPeriod(row);
+  }
+
+  Future<void> _reloadCurrentPeriod() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    await _loadAnalyticsForPeriod(_selectedPlan ?? {});
+  }
+
+  void _setMonthPeriod() {
+    setState(() {
+      _period = 'Месяц';
+      _dateFrom = null;
+      _dateTo = null;
+    });
+
+    _reloadCurrentPeriod();
+  }
+
+  void _setTodayPeriod() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _period = 'Сегодня';
+      _dateFrom = today;
+      _dateTo = today;
+    });
+
+    _reloadCurrentPeriod();
+  }
+
+  void _setLastDaysPeriod(int days) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _period = '$days дней';
+      _dateFrom = today.subtract(Duration(days: days - 1));
+      _dateTo = today;
+    });
+
+    _reloadCurrentPeriod();
+  }
+
+  Future<void> _pickFromDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateFrom ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _period = 'Период';
+      _dateFrom = DateTime(picked.year, picked.month, picked.day);
+
+      if (_dateTo != null && _dateFrom!.isAfter(_dateTo!)) {
+        _dateTo = _dateFrom;
+      }
+    });
+
+    _reloadCurrentPeriod();
+  }
+
+  Future<void> _pickToDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateTo ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _period = 'Период';
+      _dateTo = DateTime(picked.year, picked.month, picked.day);
+
+      if (_dateFrom != null && _dateTo!.isBefore(_dateFrom!)) {
+        _dateFrom = _dateTo;
+      }
+    });
+
+    _reloadCurrentPeriod();
   }
 
   double _progress(double fact, double plan) {
@@ -299,6 +417,131 @@ class _PlanPageState extends State<PlanPage> {
     );
   }
 
+  Widget _periodButton(String title, VoidCallback onTap) {
+    final selected = _period == title;
+
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFF4DA3FF).withOpacity(0.22)
+                : AppColors.bg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF4DA3FF).withOpacity(0.55)
+                  : AppColors.stroke,
+            ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: selected ? AppColors.textMain : AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dateBox({
+    required String label,
+    required DateTime? date,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.stroke),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _uiDate(date),
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _periodCard() {
+    return AppUi.sectionCard(
+      title: 'Период факта',
+      icon: Icons.date_range_outlined,
+      accent: const Color(0xFF4DA3FF),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _periodButton('Месяц', _setMonthPeriod),
+              const SizedBox(width: 8),
+              _periodButton('Сегодня', _setTodayPeriod),
+              const SizedBox(width: 8),
+              _periodButton('7 дней', () => _setLastDaysPeriod(7)),
+              const SizedBox(width: 8),
+              _periodButton('30 дней', () => _setLastDaysPeriod(30)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _dateBox(
+                label: 'С',
+                date: _dateFrom,
+                onTap: _pickFromDate,
+              ),
+              const SizedBox(width: 12),
+              _dateBox(
+                label: 'По',
+                date: _dateTo,
+                onTap: _pickToDate,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Сейчас считается: ${_periodText()}',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final row = _selectedPlan ?? {};
@@ -312,9 +555,10 @@ class _PlanPageState extends State<PlanPage> {
     final factTotalProfit = _toDouble(_monthAnalytics['totalProfit']);
     final factMyNet = _toDouble(_monthAnalytics['myNet']);
     final factAlexNet = _toDouble(_monthAnalytics['alexNet']);
-    final factKaspiRevenue = _toDouble(_monthAnalytics['kaspiRevenue']);
-    final factOptRevenue = _toDouble(_monthAnalytics['optRevenue']);
     final expenses = _toDouble(_monthAnalytics['expenses']);
+
+    final factKaspiProfit = _toDouble(_monthAnalytics['kaspiProfit']);
+    final factOptProfit = _toDouble(_monthAnalytics['optProfit']);
 
     final stasCapital = _toDouble(_distValue('Вложения', 'stas'));
     final alexCapital = _toDouble(_distValue('Вложения', 'alexey'));
@@ -335,8 +579,13 @@ class _PlanPageState extends State<PlanPage> {
     final stasFinalShare = _toDouble(_distValue('Итоговая доля', 'stas'));
     final alexFinalShare = _toDouble(_distValue('Итоговая доля', 'alexey'));
 
-    final capitalWorkStas = factTotalProfit * stasFinalShare;
-    final capitalWorkAlex = factTotalProfit * alexFinalShare;
+    final stasFinalRatio =
+    stasFinalShare > 1 ? stasFinalShare / 100 : stasFinalShare;
+    final alexFinalRatio =
+    alexFinalShare > 1 ? alexFinalShare / 100 : alexFinalShare;
+
+    final capitalWorkStas = factTotalProfit * stasFinalRatio;
+    final capitalWorkAlex = factTotalProfit * alexFinalRatio;
 
     final resultStas =
     _selectedModel == 'Текущая модель' ? factMyNet : capitalWorkStas;
@@ -345,7 +594,7 @@ class _PlanPageState extends State<PlanPage> {
 
     final modelNote = _selectedModel == 'Текущая модель'
         ? 'Текущая модель: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.'
-        : 'Капитал + работа: прибыль месяца распределяется по итоговой доле из app_distribution. Расходы в этой модели пока не вычитаются отдельно, если нужно — следующим шагом добавим.';
+        : 'Капитал + работа: прибыль выбранного периода распределяется по итоговой доле из app_distribution.';
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -392,7 +641,8 @@ class _PlanPageState extends State<PlanPage> {
               padding: const EdgeInsets.all(20),
               decoration: AppUi.cardDecoration(
                 radius: 28,
-                borderColor: const Color(0xFF8B5CF6).withOpacity(0.25),
+                borderColor:
+                const Color(0xFF8B5CF6).withOpacity(0.25),
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -426,16 +676,15 @@ class _PlanPageState extends State<PlanPage> {
               ),
             ),
             const SizedBox(height: 16),
-
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: _planRows.map(_monthButton).toList(),
               ),
             ),
-
             const SizedBox(height: 16),
-
+            _periodCard(),
+            const SizedBox(height: 16),
             AppUi.sectionCard(
               title: 'План / факт: $month',
               icon: Icons.flag_outlined,
@@ -444,7 +693,7 @@ class _PlanPageState extends State<PlanPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _progressBlock(
-                    title: 'Прибыль месяца',
+                    title: 'Прибыль',
                     fact: factTotalProfit,
                     plan: planProfit,
                     colors: const [
@@ -453,16 +702,17 @@ class _PlanPageState extends State<PlanPage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  _smallLine('Период факта', _periodText()),
                   _smallLine('Факт выручки', _formatMoney(factRevenue)),
-                  _smallLine('Факт прибыли', _formatMoney(factTotalProfit)),
-                  _smallLine('План прибыли', _formatMoney(planProfit)),
-                  _smallLine('Расходы месяца', _formatMoney(expenses)),
+                  _smallLine(
+                      'Факт прибыли', _formatMoney(factTotalProfit)),
+                  _smallLine('План прибыли месяца',
+                      _formatMoney(planProfit)),
+                  _smallLine('Расходы периода', _formatMoney(expenses)),
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
             AppUi.sectionCard(
               title: 'Каналы: Kaspi / ОПТ',
               icon: Icons.account_tree_outlined,
@@ -471,7 +721,7 @@ class _PlanPageState extends State<PlanPage> {
                 children: [
                   _progressBlock(
                     title: 'Kaspi',
-                    fact: factKaspiRevenue,
+                    fact: factKaspiProfit,
                     plan: planKaspi,
                     colors: const [
                       Color(0xFF06B6D4),
@@ -481,7 +731,7 @@ class _PlanPageState extends State<PlanPage> {
                   const SizedBox(height: 16),
                   _progressBlock(
                     title: 'ОПТ',
-                    fact: factOptRevenue,
+                    fact: factOptProfit,
                     plan: planOpt,
                     colors: const [
                       Color(0xFFF59E0B),
@@ -491,9 +741,7 @@ class _PlanPageState extends State<PlanPage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
             AppUi.sectionCard(
               title: 'Сценарий распределения',
               icon: Icons.compare_arrows_outlined,
@@ -506,9 +754,7 @@ class _PlanPageState extends State<PlanPage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
             AppUi.sectionCard(
               title: 'Распределение по модели',
               icon: Icons.account_tree_outlined,
@@ -529,9 +775,7 @@ class _PlanPageState extends State<PlanPage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
             AppUi.sectionCard(
               title: 'Параметры капитал + работа',
               icon: Icons.account_balance_wallet_outlined,
@@ -539,20 +783,31 @@ class _PlanPageState extends State<PlanPage> {
               child: Column(
                 children: [
                   _smallLine('Вложения Стас', _formatMoney(stasCapital)),
-                  _smallLine('Вложения Алексей', _formatMoney(alexCapital)),
-                  _smallLine('Всего вложений', _formatMoney(totalCapital)),
+                  _smallLine(
+                      'Вложения Алексей', _formatMoney(alexCapital)),
+                  _smallLine(
+                      'Всего вложений', _formatMoney(totalCapital)),
                   const Divider(color: AppColors.stroke, height: 22),
-                  _smallLine('Доля вложений Стас', _formatPercent(stasCapitalShare * 100)),
-                  _smallLine('Доля вложений Алексей', _formatPercent(alexCapitalShare * 100)),
-                  _smallLine('Баллы работы Стас', stasWorkPoints.toStringAsFixed(0)),
-                  _smallLine('Баллы работы Алексей', alexWorkPoints.toStringAsFixed(0)),
-                  _smallLine('Доля работы Стас', _formatPercent(stasWorkShare * 100)),
-                  _smallLine('Доля работы Алексей', _formatPercent(alexWorkShare * 100)),
+                  _smallLine('Доля вложений Стас',
+                      _formatPercent(stasCapitalShare)),
+                  _smallLine('Доля вложений Алексей',
+                      _formatPercent(alexCapitalShare)),
+                  _smallLine('Баллы работы Стас',
+                      stasWorkPoints.toStringAsFixed(0)),
+                  _smallLine('Баллы работы Алексей',
+                      alexWorkPoints.toStringAsFixed(0)),
+                  _smallLine(
+                      'Доля работы Стас', _formatPercent(stasWorkShare)),
+                  _smallLine('Доля работы Алексей',
+                      _formatPercent(alexWorkShare)),
                   const Divider(color: AppColors.stroke, height: 22),
-                  _smallLine('Вес капитала', _formatPercent(capitalWeight * 100)),
-                  _smallLine('Вес работы', _formatPercent(workWeight * 100)),
-                  _smallLine('Итоговая доля Стас', _formatPercent(stasFinalShare * 100)),
-                  _smallLine('Итоговая доля Алексей', _formatPercent(alexFinalShare * 100)),
+                  _smallLine(
+                      'Вес капитала', _formatPercent(capitalWeight)),
+                  _smallLine('Вес работы', _formatPercent(workWeight)),
+                  _smallLine('Итоговая доля Стас',
+                      _formatPercent(stasFinalShare)),
+                  _smallLine('Итоговая доля Алексей',
+                      _formatPercent(alexFinalShare)),
                 ],
               ),
             ),
