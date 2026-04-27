@@ -555,7 +555,13 @@ class _PlanPageState extends State<PlanPage> {
     final factTotalProfit = _toDouble(_monthAnalytics['totalProfit']);
     final factMyNet = _toDouble(_monthAnalytics['myNet']);
     final factAlexNet = _toDouble(_monthAnalytics['alexNet']);
-    final expenses = _toDouble(_monthAnalytics['expenses']);
+    final expenses = _toDouble(
+      _monthAnalytics['expenses'] ??
+          _monthAnalytics['totalExpenses'] ??
+          _monthAnalytics['expense'] ??
+          _monthAnalytics['costs'] ??
+          0,
+    );
 
     final factKaspiProfit = _toDouble(_monthAnalytics['kaspiProfit']);
     final factOptProfit = _toDouble(_monthAnalytics['optProfit']);
@@ -584,13 +590,18 @@ class _PlanPageState extends State<PlanPage> {
     final alexFinalRatio =
     alexFinalShare > 1 ? alexFinalShare / 100 : alexFinalShare;
 
-    final capitalWorkStas = factTotalProfit * stasFinalRatio;
-    final capitalWorkAlex = factTotalProfit * alexFinalRatio;
+    final capitalWorkStas = (factTotalProfit - expenses) * stasFinalRatio;
+    final capitalWorkAlex = (factTotalProfit - expenses) * alexFinalRatio;
+
+    final currentModelStas = factMyNet;
+    final currentModelAlex = factAlexNet;
 
     final resultStas =
-    _selectedModel == 'Текущая модель' ? factMyNet : capitalWorkStas;
+    _selectedModel == 'Текущая модель' ? currentModelStas : capitalWorkStas;
+
     final resultAlex =
-    _selectedModel == 'Текущая модель' ? factAlexNet : capitalWorkAlex;
+    _selectedModel == 'Текущая модель' ? currentModelAlex : capitalWorkAlex;
+
 
     final modelNote = _selectedModel == 'Текущая модель'
         ? 'Текущая модель: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.'

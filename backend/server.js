@@ -174,7 +174,13 @@ app.get('/analytics', async (req, res) => {
     });
 
     const filteredExpenses = expenseRows.filter(row => {
-      const d = parseDate(row['Дата'] || row['Дата_рус']);
+      const d = parseDate(
+        row['Date'] ||
+        row['RealData'] ||
+        row['Дата'] ||
+        row['Дата_рус']
+      );
+
       if (!dateFrom && !dateTo) return true;
       return isWithinRange(d, dateFrom, dateTo);
     });
@@ -341,6 +347,57 @@ app.get('/plan', async (req, res) => {
       details: error.message,
     });
   }
+});
+
+app.get('/debug-sales', async (req, res) => {
+  const dateFrom = req.query.date_from ? parseDate(req.query.date_from) : null;
+  const dateTo = req.query.date_to ? parseDate(req.query.date_to) : null;
+
+  const salesRows = await getSheetRows(SALES_RANGE);
+
+  const rows = salesRows.map((row, index) => {
+    const date = parseDate(row['Дата']);
+    const inRange = !dateFrom && !dateTo ? true : isWithinRange(date, dateFrom, dateTo);
+
+    const name = (row['Наименование'] || row['Модель'] || row.__row?.[2] || '').toString();
+    const rrc = toNumber(row['РРЦ']);
+    const cost = toNumber(row['Себестоимость']);
+    const comm = toNumber(row['Комиссия Kaspi']);
+    const profit = rrc - cost - comm;
+
+    const comment = (row['Комментарий'] || '').toString();
+    const isAriston = name.toLowerCase().includes('ariston');
+    const isPlus = comment.includes('+');
+
+    let stas = 0;
+    let alex = 0;
+
+    if (isAriston || isPlus) {
+      stas = profit / 2;
+      alex = profit / 2;
+    } else {
+      alex = profit;
+    }
+
+    return {
+      rowNumber: index + 2,
+      dateRaw: row['Дата'],
+      dateParsed: date ? date.toISOString().slice(0, 10) : null,
+      inRange,
+      name,
+      rrc,
+      cost,
+      comm,
+      profit,
+      comment,
+      isAriston,
+      isPlus,
+      stas,
+      alex,
+    };
+  });
+
+  res.json(rows);
 });
 
 app.listen(PORT, () => {
