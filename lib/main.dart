@@ -70,7 +70,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           BottomNavigationBarItem(icon: Icon(Icons.shopping_bag), label: 'Продажи'),
           BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Аналитика'),
           BottomNavigationBarItem(icon: Icon(Icons.add_box), label: 'Заказ'),
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Сводка'),
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Модель'),
           BottomNavigationBarItem(icon: Icon(Icons.flag), label: 'План'),
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Расходы'),
         ],

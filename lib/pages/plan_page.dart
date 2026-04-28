@@ -74,8 +74,8 @@ class _PlanPageState extends State<PlanPage> {
       'Январь',
       'Февраль',
       'Март',
-      'Апрель',
       'Май',
+      'Апрель',
       'Июнь',
       'Июль',
       'Август',
@@ -133,6 +133,31 @@ class _PlanPageState extends State<PlanPage> {
     );
 
     return row[column] ?? 0;
+  }
+
+  Map<String, double> _calculateFairModel({
+    required double totalProfit,
+  }) {
+    const double stasInvestment = 1100000;
+    const double alexInvestment = 7600000;
+    const double stasWork = 19;
+    const double alexWork = 81;
+
+    final totalInvestment = stasInvestment + alexInvestment;
+    final totalWork = stasWork + alexWork;
+
+    final stasInvestmentShare = stasInvestment / totalInvestment;
+    final stasWorkShare = stasWork / totalWork;
+
+    final stasFinalShare =
+        (stasInvestmentShare * 0.5) + (stasWorkShare * 0.5);
+
+    final alexFinalShare = 1 - stasFinalShare;
+
+    return {
+      'stas': totalProfit * stasFinalShare,
+      'alex': totalProfit * alexFinalShare,
+    };
   }
 
   Future<void> _loadAll() async {
@@ -390,7 +415,7 @@ class _PlanPageState extends State<PlanPage> {
           });
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13),
+          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             gradient: selected
@@ -409,7 +434,7 @@ class _PlanPageState extends State<PlanPage> {
             style: TextStyle(
               color: selected ? Colors.white : AppColors.textSecondary,
               fontWeight: FontWeight.w800,
-              fontSize: 13,
+              fontSize: 12,
             ),
           ),
         ),
@@ -555,6 +580,7 @@ class _PlanPageState extends State<PlanPage> {
     final factTotalProfit = _toDouble(_monthAnalytics['totalProfit']);
     final factMyNet = _toDouble(_monthAnalytics['myNet']);
     final factAlexNet = _toDouble(_monthAnalytics['alexNet']);
+
     final expenses = _toDouble(
       _monthAnalytics['expenses'] ??
           _monthAnalytics['totalExpenses'] ??
@@ -562,6 +588,8 @@ class _PlanPageState extends State<PlanPage> {
           _monthAnalytics['costs'] ??
           0,
     );
+
+    final netProfit = factTotalProfit - expenses;
 
     final factKaspiProfit = _toDouble(_monthAnalytics['kaspiProfit']);
     final factOptProfit = _toDouble(_monthAnalytics['optProfit']);
@@ -590,22 +618,35 @@ class _PlanPageState extends State<PlanPage> {
     final alexFinalRatio =
     alexFinalShare > 1 ? alexFinalShare / 100 : alexFinalShare;
 
-    final capitalWorkStas = (factTotalProfit - expenses) * stasFinalRatio;
-    final capitalWorkAlex = (factTotalProfit - expenses) * alexFinalRatio;
+    final capitalWorkStas = netProfit * stasFinalRatio;
+    final capitalWorkAlex = netProfit * alexFinalRatio;
 
     final currentModelStas = factMyNet;
     final currentModelAlex = factAlexNet;
 
-    final resultStas =
-    _selectedModel == 'Текущая модель' ? currentModelStas : capitalWorkStas;
+    final fairModelStas = netProfit * 0.25;
+    final fairModelAlex = netProfit * 0.75;
 
-    final resultAlex =
-    _selectedModel == 'Текущая модель' ? currentModelAlex : capitalWorkAlex;
+    double resultStas;
+    double resultAlex;
+    String modelNote;
 
-
-    final modelNote = _selectedModel == 'Текущая модель'
-        ? 'Текущая модель: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.'
-        : 'Капитал + работа: прибыль выбранного периода распределяется по итоговой доле из app_distribution.';
+    if (_selectedModel == 'Текущая модель') {
+      resultStas = currentModelStas;
+      resultAlex = currentModelAlex;
+      modelNote =
+      'Текущая модель: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.';
+    } else if (_selectedModel == 'Капитал + работа') {
+      resultStas = capitalWorkStas;
+      resultAlex = capitalWorkAlex;
+      modelNote =
+      'Капитал + работа: прибыль выбранного периода распределяется по итоговой доле из app_distribution.';
+    } else {
+      resultStas = fairModelStas;
+      resultAlex = fairModelAlex;
+      modelNote =
+      'Честная модель: Чистая прибыль выбранного периодна делится 25% Стасу и 75% Алексею.';
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -717,9 +758,10 @@ class _PlanPageState extends State<PlanPage> {
                   _smallLine('Факт выручки', _formatMoney(factRevenue)),
                   _smallLine(
                       'Факт прибыли', _formatMoney(factTotalProfit)),
-                  _smallLine('План прибыли месяца',
-                      _formatMoney(planProfit)),
+                  _smallLine(
+                      'План прибыли месяца', _formatMoney(planProfit)),
                   _smallLine('Расходы периода', _formatMoney(expenses)),
+                  _smallLine('Чистая прибыль', _formatMoney(netProfit)),
                 ],
               ),
             ),
@@ -760,8 +802,10 @@ class _PlanPageState extends State<PlanPage> {
               child: Row(
                 children: [
                   _modelButton('Текущая модель'),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   _modelButton('Капитал + работа'),
+                  const SizedBox(width: 8),
+                  _modelButton('Честная модель'),
                 ],
               ),
             ),
@@ -807,8 +851,8 @@ class _PlanPageState extends State<PlanPage> {
                       stasWorkPoints.toStringAsFixed(0)),
                   _smallLine('Баллы работы Алексей',
                       alexWorkPoints.toStringAsFixed(0)),
-                  _smallLine(
-                      'Доля работы Стас', _formatPercent(stasWorkShare)),
+                  _smallLine('Доля работы Стас',
+                      _formatPercent(stasWorkShare)),
                   _smallLine('Доля работы Алексей',
                       _formatPercent(alexWorkShare)),
                   const Divider(color: AppColors.stroke, height: 22),
