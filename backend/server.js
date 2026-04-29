@@ -270,9 +270,12 @@ app.get('/analytics', async (req, res) => {
     const dailyProfit = Object.entries(dailyProfitMap)
       .map(([date, profit]) => ({ date, profit }));
 
+    const netProfit = totalProfit - totalExpenses;
+
     res.json({
       revenue,
       totalProfit,
+      netProfit,
       myProfit,
       alexProfit,
       expenses: totalExpenses,
@@ -295,57 +298,6 @@ app.get('/analytics', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).send('Ошибка аналитики');
-  }
-});
-
-app.get('/plan', async (req, res) => {
-  try {
-    const sheet = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'app_plan!A2:L20',
-    });
-
-    const rows = sheet.data.values || [];
-
-    const monthNames = [
-      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-      'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-    ];
-
-    const currentMonthName = monthNames[new Date().getMonth()];
-
-    const row = rows.find((r) =>
-      String(r[0] || '').trim().toLowerCase() ===
-      currentMonthName.toLowerCase()
-    );
-
-    if (!row) {
-      return res.status(404).json({
-        error: 'Месяц не найден',
-        currentMonthName,
-        availableMonths: rows.map((r) => r[0]),
-      });
-    }
-
-    res.json({
-      month: row[0],
-      plan_profit: toNumber(row[2]),
-      fact_profit_from_plan: toNumber(row[3]),
-      percent_from_plan: toNumber(row[4]),
-      plan_qty: toNumber(row[5]),
-      plan_kaspi: toNumber(row[6]),
-      fact_kaspi_from_plan: toNumber(row[7]),
-      kaspi_percent_from_plan: toNumber(row[8]),
-      plan_opt: toNumber(row[9]),
-      fact_opt_from_plan: toNumber(row[10]),
-      opt_percent_from_plan: toNumber(row[11]),
-    });
-  } catch (error) {
-    console.error('Ошибка /plan:', error);
-    res.status(500).json({
-      error: 'Ошибка получения плана',
-      details: error.message,
-    });
   }
 });
 
@@ -398,6 +350,47 @@ app.get('/debug-sales', async (req, res) => {
   });
 
   res.json(rows);
+});
+
+app.post('/distribution', async (req, res) => {
+  try {
+    const { rows } = req.body;
+
+    if (!Array.isArray(rows)) {
+      return res.status(400).json({ error: 'rows должен быть массивом' });
+    }
+
+    const values = [
+      ['metric', 'stas', 'alexey', 'total', 'model'],
+      ...rows.map((r) => [
+        r.metric ?? '',
+        r.stas ?? '',
+        r.alexey ?? '',
+        r.total ?? '',
+        r.model ?? '',
+      ]),
+    ];
+
+    const client = await auth.getClient();
+    const sheetsApi = google.sheets({ version: 'v4', auth: client });
+
+    await sheetsApi.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'app_distribution!A:E',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values,
+      },
+    });
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Ошибка POST /distribution:', error);
+    res.status(500).json({
+      error: 'Ошибка сохранения модели',
+      details: error.message,
+    });
+  }
 });
 
 app.listen(PORT, () => {

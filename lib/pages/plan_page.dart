@@ -11,16 +11,12 @@ class PlanPage extends StatefulWidget {
 }
 
 class _PlanPageState extends State<PlanPage> {
-  bool _isLoading = true;
+  bool _loading = true;
   String _error = '';
 
   List<Map<String, dynamic>> _planRows = [];
-  List<Map<String, dynamic>> _distributionRows = [];
-
-  Map<String, dynamic> _monthAnalytics = {};
+  Map<String, dynamic> _analytics = {};
   Map<String, dynamic>? _selectedPlan;
-
-  String _selectedModel = 'Текущая модель';
 
   String _period = 'Месяц';
   DateTime? _dateFrom;
@@ -36,36 +32,61 @@ class _PlanPageState extends State<PlanPage> {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
 
-    final cleaned = value
-        .toString()
-        .replaceAll('₸', '')
-        .replaceAll('%', '')
-        .replaceAll(' ', '')
-        .replaceAll(',', '.')
-        .trim();
-
-    return double.tryParse(cleaned) ?? 0;
+    return double.tryParse(
+      value
+          .toString()
+          .replaceAll('₸', '')
+          .replaceAll('%', '')
+          .replaceAll(' ', '')
+          .replaceAll(',', '.'),
+    ) ??
+        0;
   }
 
-  String _formatMoney(dynamic value) {
-    final number = _toDouble(value).round().toString();
+  String _money(dynamic value) {
+    final raw = _toDouble(value).round().toString();
     final buffer = StringBuffer();
-    int counter = 0;
+    int c = 0;
 
-    for (int i = number.length - 1; i >= 0; i--) {
-      buffer.write(number[i]);
-      counter++;
-      if (counter == 3 && i != 0) {
+    for (int i = raw.length - 1; i >= 0; i--) {
+      buffer.write(raw[i]);
+      c++;
+      if (c == 3 && i != 0) {
         buffer.write(' ');
-        counter = 0;
+        c = 0;
       }
     }
 
     return '${buffer.toString().split('').reversed.join()} ₸';
   }
 
-  String _formatPercent(dynamic value) {
-    return '${_toDouble(value).toStringAsFixed(1)}%';
+  String _apiDate(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _uiDate(DateTime? date) {
+    if (date == null) return '-';
+    return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
+  }
+
+  int _monthNumber(String name) {
+    const map = {
+      'Январь': 1,
+      'Февраль': 2,
+      'Март': 3,
+      'Апрель': 4,
+      'Май': 5,
+      'Июнь': 6,
+      'Июль': 7,
+      'Август': 8,
+      'Сентябрь': 9,
+      'Октябрь': 10,
+      'Ноябрь': 11,
+      'Декабрь': 12,
+    };
+    return map[name] ?? DateTime.now().month;
   }
 
   String _monthName(int month) {
@@ -87,90 +108,37 @@ class _PlanPageState extends State<PlanPage> {
     return names[month];
   }
 
-  int _monthNumber(String name) {
-    const map = {
-      'Январь': 1,
-      'Февраль': 2,
-      'Март': 3,
-      'Апрель': 4,
-      'Май': 5,
-      'Июнь': 6,
-      'Июль': 7,
-      'Август': 8,
-      'Сентябрь': 9,
-      'Октябрь': 10,
-      'Ноябрь': 11,
-      'Декабрь': 12,
-    };
-    return map[name] ?? DateTime.now().month;
-  }
-
-  String _apiDate(DateTime date) {
-    return '${date.year.toString().padLeft(4, '0')}-'
-        '${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
-
-  String _uiDate(DateTime? date) {
-    if (date == null) return '-';
-    return '${date.year.toString().padLeft(4, '0')}/'
-        '${date.month.toString().padLeft(2, '0')}/'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
-
-  String _periodText() {
-    if (_period == 'Месяц') {
-      return 'Месяц: ${(_selectedPlan?['month'] ?? '').toString()}';
-    }
-
-    return '${_uiDate(_dateFrom)} — ${_uiDate(_dateTo)}';
-  }
-
-  dynamic _distValue(String metric, String column) {
-    final row = _distributionRows.firstWhere(
-          (r) => (r['metric'] ?? '').toString().trim() == metric,
-      orElse: () => <String, dynamic>{},
-    );
-
-    return row[column] ?? 0;
-  }
-
   Future<void> _loadAll() async {
     try {
       setState(() {
-        _isLoading = true;
+        _loading = true;
         _error = '';
       });
 
       final plan = await ApiService.fetchPlan();
-      final distribution = await ApiService.fetchDistribution();
-
       final now = DateTime.now();
-      final currentMonthName = _monthName(now.month);
+      final currentMonth = _monthName(now.month);
 
       final selected = plan.firstWhere(
-            (row) => (row['month'] ?? '').toString().trim() == currentMonthName,
+            (r) => (r['month'] ?? '').toString().trim() == currentMonth,
         orElse: () => plan.isNotEmpty ? plan.first : <String, dynamic>{},
       );
 
-      setState(() {
-        _planRows = plan;
-        _distributionRows = distribution;
-        _selectedPlan = selected;
-      });
+      _planRows = plan;
+      _selectedPlan = selected;
 
-      await _loadAnalyticsForPeriod(selected);
+      await _loadAnalytics();
     } catch (e) {
       setState(() {
         _error = e.toString();
-        _isLoading = false;
+        _loading = false;
       });
     }
   }
 
-  Future<void> _loadAnalyticsForPeriod(Map<String, dynamic> planRow) async {
-    final monthName = (planRow['month'] ?? '').toString();
-    final month = _monthNumber(monthName);
+  Future<void> _loadAnalytics() async {
+    final row = _selectedPlan ?? {};
+    final month = _monthNumber((row['month'] ?? '').toString());
     const year = 2026;
 
     DateTime from;
@@ -179,6 +147,18 @@ class _PlanPageState extends State<PlanPage> {
     if (_period == 'Месяц') {
       from = DateTime(year, month, 1);
       to = DateTime(year, month + 1, 0);
+    } else if (_period == 'Сегодня') {
+      final now = DateTime.now();
+      from = DateTime(now.year, now.month, now.day);
+      to = from;
+    } else if (_period == '7 дней') {
+      final now = DateTime.now();
+      to = DateTime(now.year, now.month, now.day);
+      from = to.subtract(const Duration(days: 6));
+    } else if (_period == '30 дней') {
+      final now = DateTime.now();
+      to = DateTime(now.year, now.month, now.day);
+      from = to.subtract(const Duration(days: 29));
     } else {
       from = _dateFrom ?? DateTime(year, month, 1);
       to = _dateTo ?? DateTime(year, month + 1, 0);
@@ -190,8 +170,10 @@ class _PlanPageState extends State<PlanPage> {
     );
 
     setState(() {
-      _monthAnalytics = data;
-      _isLoading = false;
+      _analytics = data;
+      _dateFrom = from;
+      _dateTo = to;
+      _loading = false;
     });
   }
 
@@ -199,62 +181,29 @@ class _PlanPageState extends State<PlanPage> {
     setState(() {
       _selectedPlan = row;
       _period = 'Месяц';
-      _dateFrom = null;
-      _dateTo = null;
-      _isLoading = true;
+      _loading = true;
     });
 
-    await _loadAnalyticsForPeriod(row);
+    await _loadAnalytics();
   }
 
-  Future<void> _reloadCurrentPeriod() async {
+  void _setPeriod(String period) {
     setState(() {
-      _isLoading = true;
+      _period = period;
+      _loading = true;
     });
 
-    await _loadAnalyticsForPeriod(_selectedPlan ?? {});
+    _loadAnalytics();
   }
 
-  void _setMonthPeriod() {
-    setState(() {
-      _period = 'Месяц';
-      _dateFrom = null;
-      _dateTo = null;
-    });
+  Future<void> _pickDate({required bool isFrom}) async {
+    final initial = isFrom
+        ? (_dateFrom ?? DateTime.now())
+        : (_dateTo ?? DateTime.now());
 
-    _reloadCurrentPeriod();
-  }
-
-  void _setTodayPeriod() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    setState(() {
-      _period = 'Сегодня';
-      _dateFrom = today;
-      _dateTo = today;
-    });
-
-    _reloadCurrentPeriod();
-  }
-
-  void _setLastDaysPeriod(int days) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    setState(() {
-      _period = '$days дней';
-      _dateFrom = today.subtract(Duration(days: days - 1));
-      _dateTo = today;
-    });
-
-    _reloadCurrentPeriod();
-  }
-
-  Future<void> _pickFromDate() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dateFrom ?? DateTime.now(),
+      initialDate: initial,
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
@@ -263,83 +212,23 @@ class _PlanPageState extends State<PlanPage> {
 
     setState(() {
       _period = 'Период';
-      _dateFrom = DateTime(picked.year, picked.month, picked.day);
 
-      if (_dateTo != null && _dateFrom!.isAfter(_dateTo!)) {
-        _dateTo = _dateFrom;
+      if (isFrom) {
+        _dateFrom = DateTime(picked.year, picked.month, picked.day);
+        if (_dateTo != null && _dateFrom!.isAfter(_dateTo!)) {
+          _dateTo = _dateFrom;
+        }
+      } else {
+        _dateTo = DateTime(picked.year, picked.month, picked.day);
+        if (_dateFrom != null && _dateTo!.isBefore(_dateFrom!)) {
+          _dateFrom = _dateTo;
+        }
       }
+
+      _loading = true;
     });
 
-    _reloadCurrentPeriod();
-  }
-
-  Future<void> _pickToDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dateTo ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-    );
-
-    if (picked == null) return;
-
-    setState(() {
-      _period = 'Период';
-      _dateTo = DateTime(picked.year, picked.month, picked.day);
-
-      if (_dateFrom != null && _dateTo!.isBefore(_dateFrom!)) {
-        _dateFrom = _dateTo;
-      }
-    });
-
-    _reloadCurrentPeriod();
-  }
-
-  double _progress(double fact, double plan) {
-    if (plan <= 0) return 0;
-    return (fact / plan).clamp(0.0, 1.0).toDouble();
-  }
-
-  Widget _smallLine(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _progressBlock({
-    required String title,
-    required double fact,
-    required double plan,
-    required List<Color> colors,
-  }) {
-    return AppUi.progressBlock(
-      title: title,
-      currentLabel: _formatMoney(fact),
-      totalLabel: _formatMoney(plan),
-      progress: _progress(fact, plan),
-      accentColors: colors,
-    );
+    await _loadAnalytics();
   }
 
   Widget _monthButton(Map<String, dynamic> row) {
@@ -352,15 +241,10 @@ class _PlanPageState extends State<PlanPage> {
         borderRadius: BorderRadius.circular(18),
         onTap: () => _selectMonth(row),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            gradient: selected
-                ? const LinearGradient(
-              colors: [Color(0xFF4DA3FF), Color(0xFF2D7DFF)],
-            )
-                : null,
-            color: selected ? null : AppColors.card,
+            color: selected ? const Color(0xFF22C55E) : AppColors.card,
             border: Border.all(
               color: selected ? Colors.transparent : AppColors.stroke,
             ),
@@ -370,7 +254,7 @@ class _PlanPageState extends State<PlanPage> {
             style: TextStyle(
               color: selected ? Colors.white : AppColors.textSecondary,
               fontWeight: FontWeight.w800,
-              fontSize: 13,
+              fontSize: 12,
             ),
           ),
         ),
@@ -378,72 +262,29 @@ class _PlanPageState extends State<PlanPage> {
     );
   }
 
-  Widget _modelButton(String title) {
-    final selected = _selectedModel == title;
+  Widget _periodButton(String title) {
+    final selected = _period == title;
 
     return Expanded(
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          setState(() {
-            _selectedModel = title;
-          });
-        },
+        onTap: () => _setPeriod(title),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13),
+          height: 40,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: selected
-                ? const LinearGradient(
-              colors: [Color(0xFF22C55E), Color(0xFF16A34A)],
-            )
-                : null,
-            color: selected ? null : AppColors.bg,
+            borderRadius: BorderRadius.circular(16),
+            color: selected ? const Color(0xFF22C55E) : AppColors.bg,
             border: Border.all(
               color: selected ? Colors.transparent : AppColors.stroke,
             ),
           ),
           child: Text(
             title,
-            textAlign: TextAlign.center,
             style: TextStyle(
               color: selected ? Colors.white : AppColors.textSecondary,
               fontWeight: FontWeight.w800,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _periodButton(String title, VoidCallback onTap) {
-    final selected = _period == title;
-
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          height: 42,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF4DA3FF).withOpacity(0.22)
-                : AppColors.bg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFF4DA3FF).withOpacity(0.55)
-                  : AppColors.stroke,
-            ),
-          ),
-          child: Text(
-            title,
-            style: TextStyle(
-              color: selected ? AppColors.textMain : AppColors.textSecondary,
               fontSize: 12,
-              fontWeight: FontWeight.w800,
             ),
           ),
         ),
@@ -458,14 +299,20 @@ class _PlanPageState extends State<PlanPage> {
   }) {
     return Expanded(
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(13),
           decoration: BoxDecoration(
-            color: AppColors.bg,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.stroke),
+            color: _period == 'Период'
+                ? const Color(0xFF22C55E).withOpacity(0.10)
+                : AppColors.bg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _period == 'Период'
+                  ? const Color(0xFF22C55E).withOpacity(0.45)
+                  : AppColors.stroke,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,17 +321,17 @@ class _PlanPageState extends State<PlanPage> {
                 label,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 5),
               Text(
                 _uiDate(date),
                 style: const TextStyle(
                   color: AppColors.textMain,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
@@ -494,51 +341,60 @@ class _PlanPageState extends State<PlanPage> {
     );
   }
 
-  Widget _periodCard() {
-    return AppUi.sectionCard(
-      title: 'Период факта',
-      icon: Icons.date_range_outlined,
-      accent: const Color(0xFF4DA3FF),
-      child: Column(
+  Widget _line(String label, String value, {bool bold = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
         children: [
-          Row(
-            children: [
-              _periodButton('Месяц', _setMonthPeriod),
-              const SizedBox(width: 8),
-              _periodButton('Сегодня', _setTodayPeriod),
-              const SizedBox(width: 8),
-              _periodButton('7 дней', () => _setLastDaysPeriod(7)),
-              const SizedBox(width: 8),
-              _periodButton('30 дней', () => _setLastDaysPeriod(30)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _dateBox(
-                label: 'С',
-                date: _dateFrom,
-                onTap: _pickFromDate,
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
               ),
-              const SizedBox(width: 12),
-              _dateBox(
-                label: 'По',
-                date: _dateTo,
-                onTap: _pickToDate,
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 10),
           Text(
-            'Сейчас считается: ${_periodText()}',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
+            value,
+            style: TextStyle(
+              color: AppColors.textMain,
+              fontSize: 13,
+              fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _progress(String title, double fact, double plan) {
+    final percent = plan == 0 ? 0.0 : (fact / plan) * 100;
+    final value = (percent.clamp(0, 100)) / 100;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(color: AppColors.textSecondary)),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 10,
+            backgroundColor: AppColors.stroke,
+            color: const Color(0xFF22C55E),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${percent.toStringAsFixed(1)}%',
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 
@@ -551,61 +407,11 @@ class _PlanPageState extends State<PlanPage> {
     final planKaspi = _toDouble(row['plan_kaspi']);
     final planOpt = _toDouble(row['plan_opt']);
 
-    final factRevenue = _toDouble(_monthAnalytics['revenue']);
-    final factTotalProfit = _toDouble(_monthAnalytics['totalProfit']);
-    final factMyNet = _toDouble(_monthAnalytics['myNet']);
-    final factAlexNet = _toDouble(_monthAnalytics['alexNet']);
-    final expenses = _toDouble(
-      _monthAnalytics['expenses'] ??
-          _monthAnalytics['totalExpenses'] ??
-          _monthAnalytics['expense'] ??
-          _monthAnalytics['costs'] ??
-          0,
-    );
-
-    final factKaspiProfit = _toDouble(_monthAnalytics['kaspiProfit']);
-    final factOptProfit = _toDouble(_monthAnalytics['optProfit']);
-
-    final stasCapital = _toDouble(_distValue('Вложения', 'stas'));
-    final alexCapital = _toDouble(_distValue('Вложения', 'alexey'));
-    final totalCapital = _toDouble(_distValue('Вложения', 'total'));
-
-    final stasCapitalShare = _toDouble(_distValue('Доля вложений', 'stas'));
-    final alexCapitalShare = _toDouble(_distValue('Доля вложений', 'alexey'));
-
-    final stasWorkPoints = _toDouble(_distValue('Баллы за работу', 'stas'));
-    final alexWorkPoints = _toDouble(_distValue('Баллы за работу', 'alexey'));
-
-    final stasWorkShare = _toDouble(_distValue('Доля работы', 'stas'));
-    final alexWorkShare = _toDouble(_distValue('Доля работы', 'alexey'));
-
-    final capitalWeight = _toDouble(_distValue('Вес вложений', 'total'));
-    final workWeight = _toDouble(_distValue('Вес работы', 'total'));
-
-    final stasFinalShare = _toDouble(_distValue('Итоговая доля', 'stas'));
-    final alexFinalShare = _toDouble(_distValue('Итоговая доля', 'alexey'));
-
-    final stasFinalRatio =
-    stasFinalShare > 1 ? stasFinalShare / 100 : stasFinalShare;
-    final alexFinalRatio =
-    alexFinalShare > 1 ? alexFinalShare / 100 : alexFinalShare;
-
-    final capitalWorkStas = (factTotalProfit - expenses) * stasFinalRatio;
-    final capitalWorkAlex = (factTotalProfit - expenses) * alexFinalRatio;
-
-    final currentModelStas = factMyNet;
-    final currentModelAlex = factAlexNet;
-
-    final resultStas =
-    _selectedModel == 'Текущая модель' ? currentModelStas : capitalWorkStas;
-
-    final resultAlex =
-    _selectedModel == 'Текущая модель' ? currentModelAlex : capitalWorkAlex;
-
-
-    final modelNote = _selectedModel == 'Текущая модель'
-        ? 'Текущая модель: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.'
-        : 'Капитал + работа: прибыль выбранного периода распределяется по итоговой доле из app_distribution.';
+    final factRevenue = _toDouble(_analytics['revenue']);
+    final factProfit = _toDouble(_analytics['totalProfit']);
+    final factKaspi = _toDouble(_analytics['kaspiProfit']);
+    final factOpt = _toDouble(_analytics['optProfit']);
+    final expenses = _toDouble(_analytics['expenses']);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -627,202 +433,150 @@ class _PlanPageState extends State<PlanPage> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      )
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty
           ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            _error,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.danger),
-          ),
+        child: Text(
+          _error,
+          style: const TextStyle(color: AppColors.danger),
         ),
       )
-          : RefreshIndicator(
-        onRefresh: _loadAll,
-        color: AppColors.primary,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: AppUi.cardDecoration(
-                radius: 28,
-                borderColor:
-                const Color(0xFF8B5CF6).withOpacity(0.25),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withOpacity(0.02),
-                    const Color(0xFF8B5CF6).withOpacity(0.08),
+          : Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: AppUi.cardDecoration(
+                  radius: 28,
+                  borderColor:
+                  const Color(0xFF22C55E).withOpacity(0.25),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.02),
+                      const Color(0xFF22C55E).withOpacity(0.08),
+                    ],
+                  ),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Выполнение плана',
+                      style: TextStyle(
+                        color: AppColors.textMain,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'План / факт по выбранному месяцу или периоду.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'План продаж',
-                    style: TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
+              const SizedBox(height: 16),
+
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _planRows.map(_monthButton).toList(),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              AppUi.sectionCard(
+                title: 'Период факта',
+                icon: Icons.date_range_outlined,
+                accent: const Color(0xFF4DA3FF),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        _periodButton('Месяц'),
+                        const SizedBox(width: 8),
+                        _periodButton('Сегодня'),
+                      ],
                     ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Помесячный план, факт продаж и распределение прибыли по моделям.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                      height: 1.4,
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _periodButton('7 дней'),
+                        const SizedBox(width: 8),
+                        _periodButton('30 дней'),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _planRows.map(_monthButton).toList(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _periodCard(),
-            const SizedBox(height: 16),
-            AppUi.sectionCard(
-              title: 'План / факт: $month',
-              icon: Icons.flag_outlined,
-              accent: const Color(0xFF4DA3FF),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _progressBlock(
-                    title: 'Прибыль',
-                    fact: factTotalProfit,
-                    plan: planProfit,
-                    colors: const [
-                      Color(0xFF4DA3FF),
-                      Color(0xFF2D7DFF),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _smallLine('Период факта', _periodText()),
-                  _smallLine('Факт выручки', _formatMoney(factRevenue)),
-                  _smallLine(
-                      'Факт прибыли', _formatMoney(factTotalProfit)),
-                  _smallLine('План прибыли месяца',
-                      _formatMoney(planProfit)),
-                  _smallLine('Расходы периода', _formatMoney(expenses)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            AppUi.sectionCard(
-              title: 'Каналы: Kaspi / ОПТ',
-              icon: Icons.account_tree_outlined,
-              accent: const Color(0xFFF59E0B),
-              child: Column(
-                children: [
-                  _progressBlock(
-                    title: 'Kaspi',
-                    fact: factKaspiProfit,
-                    plan: planKaspi,
-                    colors: const [
-                      Color(0xFF06B6D4),
-                      Color(0xFF0891B2),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _progressBlock(
-                    title: 'ОПТ',
-                    fact: factOptProfit,
-                    plan: planOpt,
-                    colors: const [
-                      Color(0xFFF59E0B),
-                      Color(0xFFD97706),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            AppUi.sectionCard(
-              title: 'Сценарий распределения',
-              icon: Icons.compare_arrows_outlined,
-              accent: const Color(0xFF22C55E),
-              child: Row(
-                children: [
-                  _modelButton('Текущая модель'),
-                  const SizedBox(width: 10),
-                  _modelButton('Капитал + работа'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            AppUi.sectionCard(
-              title: 'Распределение по модели',
-              icon: Icons.account_tree_outlined,
-              accent: const Color(0xFF22C55E),
-              child: Column(
-                children: [
-                  _smallLine('Стас', _formatMoney(resultStas)),
-                  _smallLine('Алексей', _formatMoney(resultAlex)),
-                  const Divider(color: AppColors.stroke, height: 22),
-                  Text(
-                    modelNote,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.35,
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _dateBox(
+                          label: 'С',
+                          date: _dateFrom,
+                          onTap: () => _pickDate(isFrom: true),
+                        ),
+                        const SizedBox(width: 10),
+                        _dateBox(
+                          label: 'По',
+                          date: _dateTo,
+                          onTap: () => _pickDate(isFrom: false),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    _line(
+                      'Сейчас считается',
+                      '${_uiDate(_dateFrom)} — ${_uiDate(_dateTo)}',
+                      bold: true,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            AppUi.sectionCard(
-              title: 'Параметры капитал + работа',
-              icon: Icons.account_balance_wallet_outlined,
-              accent: const Color(0xFF8B5CF6),
-              child: Column(
-                children: [
-                  _smallLine('Вложения Стас', _formatMoney(stasCapital)),
-                  _smallLine(
-                      'Вложения Алексей', _formatMoney(alexCapital)),
-                  _smallLine(
-                      'Всего вложений', _formatMoney(totalCapital)),
-                  const Divider(color: AppColors.stroke, height: 22),
-                  _smallLine('Доля вложений Стас',
-                      _formatPercent(stasCapitalShare)),
-                  _smallLine('Доля вложений Алексей',
-                      _formatPercent(alexCapitalShare)),
-                  _smallLine('Баллы работы Стас',
-                      stasWorkPoints.toStringAsFixed(0)),
-                  _smallLine('Баллы работы Алексей',
-                      alexWorkPoints.toStringAsFixed(0)),
-                  _smallLine(
-                      'Доля работы Стас', _formatPercent(stasWorkShare)),
-                  _smallLine('Доля работы Алексей',
-                      _formatPercent(alexWorkShare)),
-                  const Divider(color: AppColors.stroke, height: 22),
-                  _smallLine(
-                      'Вес капитала', _formatPercent(capitalWeight)),
-                  _smallLine('Вес работы', _formatPercent(workWeight)),
-                  _smallLine('Итоговая доля Стас',
-                      _formatPercent(stasFinalShare)),
-                  _smallLine('Итоговая доля Алексей',
-                      _formatPercent(alexFinalShare)),
-                ],
+
+              const SizedBox(height: 16),
+
+              AppUi.sectionCard(
+                title: 'План / факт: $month',
+                icon: Icons.flag_outlined,
+                accent: const Color(0xFF22C55E),
+                child: Column(
+                  children: [
+                    _line('Факт выручки', _money(factRevenue)),
+                    _line('Факт прибыли', _money(factProfit)),
+                    _line('План прибыли месяца', _money(planProfit)),
+                    _line('Расходы периода', _money(expenses)),
+                  ],
+                ),
               ),
-            ),
-          ],
+
+              const SizedBox(height: 16),
+
+              AppUi.sectionCard(
+                title: 'Прогресс',
+                icon: Icons.trending_up,
+                accent: const Color(0xFF22C55E),
+                child: Column(
+                  children: [
+                    _progress('Прибыль', factProfit, planProfit),
+                    const SizedBox(height: 16),
+                    _progress('Kaspi', factKaspi, planKaspi),
+                    const SizedBox(height: 16),
+                    _progress('ОПТ', factOpt, planOpt),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
