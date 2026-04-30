@@ -189,7 +189,8 @@ class _HomePageState extends State<HomePage> {
           .replaceAll('₸', '')
           .replaceAll('%', '')
           .replaceAll(' ', '')
-          .replaceAll(',', '.'),
+          .replaceAll(',', '.')
+          .trim(),
     ) ??
         0;
   }
@@ -295,12 +296,12 @@ class _HomePageState extends State<HomePage> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 44,
+          height: 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: active
                 ? const Color(0xFF4DA3FF).withOpacity(0.22)
-                : Colors.white.withOpacity(0.03),
+                : AppColors.bg,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: active
@@ -312,7 +313,7 @@ class _HomePageState extends State<HomePage> {
             title,
             style: TextStyle(
               color: active ? AppColors.textMain : AppColors.textSecondary,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -332,7 +333,7 @@ class _HomePageState extends State<HomePage> {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.03),
+            color: AppColors.bg,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: AppColors.stroke),
           ),
@@ -352,7 +353,7 @@ class _HomePageState extends State<HomePage> {
                 _uiDate(date),
                 style: const TextStyle(
                   color: AppColors.textMain,
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -428,7 +429,7 @@ class _HomePageState extends State<HomePage> {
           );
         },
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           decoration: AppUi.cardDecoration(
             radius: 22,
             borderColor: colors.first.withOpacity(0.22),
@@ -442,9 +443,9 @@ class _HomePageState extends State<HomePage> {
             ),
             shadows: [
               BoxShadow(
-                color: colors.first.withOpacity(0.14),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
+                color: colors.first.withOpacity(0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
@@ -452,30 +453,32 @@ class _HomePageState extends State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(colors: colors),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(icon, color: Colors.white),
+                child: Icon(icon, color: Colors.white, size: 20),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 title,
                 style: const TextStyle(
                   color: AppColors.textMain,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 12.5,
-                  height: 1.3,
+                  fontSize: 12,
+                  height: 1.25,
                 ),
               ),
             ],
@@ -493,58 +496,56 @@ class _HomePageState extends State<HomePage> {
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: AppUi.cardDecoration(
-        radius: 22,
+        radius: 20,
         borderColor: colors.first.withOpacity(0.20),
         shadows: [
           BoxShadow(
-            color: colors.first.withOpacity(0.10),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+            color: colors.first.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: colors),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: Colors.white, size: 20),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: colors),
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
+            child: Icon(icon, color: Colors.white, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    text,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.35,
-                    ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12.5,
+                    height: 1.35,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -756,17 +757,19 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final periodProfit = _formatMoney(_analytics?['totalProfit']);
-    final periodNet = _formatMoney(
-      _toDouble(_analytics?['totalProfit']) - _toDouble(_analytics?['expenses']),
-    );
+    final totalProfit = _toDouble(_analytics?['totalProfit']);
+    final expensesValue = _toDouble(_analytics?['expenses']);
+    final cleanProfit = totalProfit - expensesValue;
+
+    final periodProfit = _formatMoney(totalProfit);
+    final periodNet = _formatMoney(cleanProfit);
 
     final kaspiProfit = _formatMoney(_analytics?['kaspiProfit']);
     final optProfit = _formatMoney(_analytics?['optProfit']);
     final count = _toInt(_analytics?['salesCount'] ?? 0).toString();
     final avgCheck = _formatMoney(_analytics?['avgCheck']);
     final margin = _formatPercent(_analytics?['margin']);
-    final expenses = _formatMoney(_analytics?['expenses']);
+    final expenses = _formatMoney(expensesValue);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -777,7 +780,7 @@ class _HomePageState extends State<HomePage> {
           'Главная',
           style: TextStyle(
             color: AppColors.textMain,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w900,
             fontSize: 24,
           ),
         ),
@@ -828,283 +831,291 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       )
-          : ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: AppUi.cardDecoration(
-              radius: 28,
-              borderColor:
-              const Color(0xFF4DA3FF).withOpacity(0.22),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.02),
-                  const Color(0xFF4DA3FF).withOpacity(0.08),
-                ],
-              ),
-              shadows: [
-                BoxShadow(
-                  color: const Color(0xFF4DA3FF).withOpacity(0.14),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TechnoOpt',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Управление бизнесом',
-                  style: TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                  ),
-                ),
-                SizedBox(height: 10),
-                Text(
-                  'Распределение прибыли, маржинальность, расходы, аналитика продаж.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                    height: 1.45,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _filterCard(),
-          const SizedBox(height: 16),
-          Row(
+          : Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
             children: [
-              Expanded(
-                child: AppUi.metricCard(
-                  icon: Icons.payments_outlined,
-                  title: 'Прибыль за период',
-                  value: periodProfit,
-                  accentColors: const [
-                    Color(0xFF4DA3FF),
-                    Color(0xFF2D7DFF),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AppUi.metricCard(
-                  icon: Icons.trending_up_outlined,
-                  title: 'Чистая прибыль',
-                  value: periodNet,
-                  accentColors: const [
-                    Color(0xFF22C55E),
-                    Color(0xFF16A34A),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: AppUi.metricCard(
-                  icon: Icons.storefront_outlined,
-                  title: 'Каспий',
-                  value: kaspiProfit,
-                  accentColors: const [
-                    Color(0xFF8B5CF6),
-                    Color(0xFF6D28D9),
-                  ],
-                  compact: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: AppUi.metricCard(
-                  icon: Icons.local_shipping_outlined,
-                  title: 'ОПТ',
-                  value: optProfit,
-                  accentColors: const [
-                    Color(0xFFF59E0B),
-                    Color(0xFFD97706),
-                  ],
-                  compact: true,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          AppUi.sectionCard(
-            title: 'Быстрые действия',
-            icon: Icons.flash_on_rounded,
-            accent: const Color(0xFF22C55E),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    _quickActionCard(
-                      context: context,
-                      title: 'Новый заказ',
-                      subtitle: 'Быстро перейти к созданию заказа',
-                      icon: Icons.add_box_outlined,
-                      colors: const [
-                        Color(0xFF22C55E),
-                        Color(0xFF16A34A),
-                      ],
-                      page: const CreateOrderPage(),
-                    ),
-                    const SizedBox(width: 12),
-                    _quickActionCard(
-                      context: context,
-                      title: 'Добавить расход',
-                      subtitle: 'Занести расход и назначить владельца',
-                      icon: Icons.receipt_long_outlined,
-                      colors: const [
-                        Color(0xFFEF4444),
-                        Color(0xFFDC2626),
-                      ],
-                      page: const ExpensesPage(),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: AppUi.cardDecoration(
+                  radius: 28,
+                  borderColor:
+                  const Color(0xFF4DA3FF).withOpacity(0.22),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white.withOpacity(0.02),
+                      const Color(0xFF4DA3FF).withOpacity(0.08),
+                    ],
+                  ),
+                  shadows: [
+                    BoxShadow(
+                      color:
+                      const Color(0xFF4DA3FF).withOpacity(0.12),
+                      blurRadius: 16,
+                      offset: const Offset(0, 7),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Row(
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _quickActionCard(
-                      context: context,
-                      title: 'Продажи',
-                      subtitle: 'Открыть список продаж и фильтры',
-                      icon: Icons.shopping_bag_outlined,
-                      colors: const [
+                    Text(
+                      'TechnoOpt',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Управление бизнесом',
+                      style: TextStyle(
+                        color: AppColors.textMain,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        height: 1.0,
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'Прибыль, расходы, каналы и быстрый доступ к основным разделам.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              _filterCard(),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppUi.metricCard(
+                      icon: Icons.payments_outlined,
+                      title: 'Прибыль',
+                      value: periodProfit,
+                      accentColors: const [
                         Color(0xFF4DA3FF),
                         Color(0xFF2D7DFF),
                       ],
-                      page: const SalesPage(),
+                      compact: true,
                     ),
-                    const SizedBox(width: 12),
-                    _quickActionCard(
-                      context: context,
-                      title: 'Аналитика',
-                      subtitle: 'Перейти к разбору показателей',
-                      icon: Icons.bar_chart_outlined,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: AppUi.metricCard(
+                      icon: Icons.trending_up_outlined,
+                      title: 'Чистая',
+                      value: periodNet,
+                      accentColors: const [
+                        Color(0xFF22C55E),
+                        Color(0xFF16A34A),
+                      ],
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppUi.metricCard(
+                      icon: Icons.storefront_outlined,
+                      title: 'Каспий',
+                      value: kaspiProfit,
+                      accentColors: const [
+                        Color(0xFF8B5CF6),
+                        Color(0xFF6D28D9),
+                      ],
+                      compact: true,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: AppUi.metricCard(
+                      icon: Icons.local_shipping_outlined,
+                      title: 'ОПТ',
+                      value: optProfit,
+                      accentColors: const [
+                        Color(0xFFF59E0B),
+                        Color(0xFFD97706),
+                      ],
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              AppUi.sectionCard(
+                title: 'Быстрые действия',
+                icon: Icons.flash_on_rounded,
+                accent: const Color(0xFF22C55E),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        _quickActionCard(
+                          context: context,
+                          title: 'Новый заказ',
+                          subtitle: 'Создать накладную',
+                          icon: Icons.add_box_outlined,
+                          colors: const [
+                            Color(0xFF22C55E),
+                            Color(0xFF16A34A),
+                          ],
+                          page: const CreateOrderPage(),
+                        ),
+                        const SizedBox(width: 12),
+                        _quickActionCard(
+                          context: context,
+                          title: 'Расход',
+                          subtitle: 'Добавить расход',
+                          icon: Icons.receipt_long_outlined,
+                          colors: const [
+                            Color(0xFFEF4444),
+                            Color(0xFFDC2626),
+                          ],
+                          page: const ExpensesPage(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _quickActionCard(
+                          context: context,
+                          title: 'Продажи',
+                          subtitle: 'Список и фильтры',
+                          icon: Icons.shopping_bag_outlined,
+                          colors: const [
+                            Color(0xFF4DA3FF),
+                            Color(0xFF2D7DFF),
+                          ],
+                          page: const SalesPage(),
+                        ),
+                        const SizedBox(width: 12),
+                        _quickActionCard(
+                          context: context,
+                          title: 'Аналитика',
+                          subtitle: 'Показатели',
+                          icon: Icons.bar_chart_outlined,
+                          colors: const [
+                            Color(0xFF8B5CF6),
+                            Color(0xFF6D28D9),
+                          ],
+                          page: const AnalyticsPage(),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              AppUi.sectionCard(
+                title: 'Короткая сводка',
+                icon: Icons.grid_view_rounded,
+                accent: const Color(0xFFF59E0B),
+                child: Column(
+                  children: [
+                    _miniSummaryRow(
+                      label: 'Период',
+                      value: _periodText(),
+                      accent: const Color(0xFF06B6D4),
+                    ),
+                    _miniSummaryRow(
+                      label: 'Продаж',
+                      value: count,
+                      accent: const Color(0xFF4DA3FF),
+                    ),
+                    _miniSummaryRow(
+                      label: 'Средний чек',
+                      value: avgCheck,
+                      accent: const Color(0xFF22C55E),
+                    ),
+                    _miniSummaryRow(
+                      label: 'Маржинальность',
+                      value: margin,
+                      accent: const Color(0xFF8B5CF6),
+                    ),
+                    _miniSummaryRow(
+                      label: 'Расходы',
+                      value: expenses,
+                      accent: const Color(0xFFEF4444),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              AppUi.sectionCard(
+                title: 'Инсайты',
+                icon: Icons.auto_awesome_rounded,
+                accent: const Color(0xFF06B6D4),
+                child: Column(
+                  children: [
+                    _insightCard(
+                      title: 'Каналы',
+                      text: _channelLeaderText(),
+                      icon: Icons.compare_arrows_rounded,
+                      colors: const [
+                        Color(0xFF06B6D4),
+                        Color(0xFF0891B2),
+                      ],
+                    ),
+                    _insightCard(
+                      title: 'Товар',
+                      text: _topProductText(),
+                      icon: Icons.workspace_premium_outlined,
+                      colors: const [
+                        Color(0xFFF59E0B),
+                        Color(0xFFD97706),
+                      ],
+                    ),
+                    _insightCard(
+                      title: 'Партнёр',
+                      text: _partnerText(),
+                      icon: Icons.groups_outlined,
                       colors: const [
                         Color(0xFF8B5CF6),
                         Color(0xFF6D28D9),
                       ],
-                      page: const AnalyticsPage(),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 16),
+              AppUi.sectionCard(
+                title: 'График прибыли',
+                icon: Icons.show_chart_rounded,
+                accent: const Color(0xFF4DA3FF),
+                child: _smallChart(),
+              ),
+              const SizedBox(height: 16),
+              AppUi.sectionCard(
+                title: 'Топ-5 товаров',
+                icon: Icons.workspace_premium_outlined,
+                accent: const Color(0xFFF59E0B),
+                child: _top5Compact(),
+              ),
+              const SizedBox(height: 16),
+              AppUi.sectionCard(
+                title: 'Для партнёра',
+                icon: Icons.groups_rounded,
+                accent: const Color(0xFF8B5CF6),
+                child: _partnerCompact(),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          AppUi.sectionCard(
-            title: 'Короткая сводка',
-            icon: Icons.grid_view_rounded,
-            accent: const Color(0xFFF59E0B),
-            child: Column(
-              children: [
-                _miniSummaryRow(
-                  label: 'Период',
-                  value: _periodText(),
-                  accent: const Color(0xFF06B6D4),
-                ),
-                _miniSummaryRow(
-                  label: 'Продажи за период',
-                  value: count,
-                  accent: const Color(0xFF4DA3FF),
-                ),
-                _miniSummaryRow(
-                  label: 'Средний чек',
-                  value: avgCheck,
-                  accent: const Color(0xFF22C55E),
-                ),
-                _miniSummaryRow(
-                  label: 'Маржинальность',
-                  value: margin,
-                  accent: const Color(0xFF8B5CF6),
-                ),
-                _miniSummaryRow(
-                  label: 'Расходы',
-                  value: expenses,
-                  accent: const Color(0xFFEF4444),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppUi.sectionCard(
-            title: 'Инсайты',
-            icon: Icons.auto_awesome_rounded,
-            accent: const Color(0xFF06B6D4),
-            child: Column(
-              children: [
-                _insightCard(
-                  title: 'По каналам',
-                  text: _channelLeaderText(),
-                  icon: Icons.compare_arrows_rounded,
-                  colors: const [
-                    Color(0xFF06B6D4),
-                    Color(0xFF0891B2),
-                  ],
-                ),
-                _insightCard(
-                  title: 'По товарам',
-                  text: _topProductText(),
-                  icon: Icons.workspace_premium_outlined,
-                  colors: const [
-                    Color(0xFFF59E0B),
-                    Color(0xFFD97706),
-                  ],
-                ),
-                _insightCard(
-                  title: 'Для партнёра',
-                  text: _partnerText(),
-                  icon: Icons.groups_outlined,
-                  colors: const [
-                    Color(0xFF8B5CF6),
-                    Color(0xFF6D28D9),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppUi.sectionCard(
-            title: 'График',
-            icon: Icons.show_chart_rounded,
-            accent: const Color(0xFF4DA3FF),
-            child: _smallChart(),
-          ),
-          const SizedBox(height: 16),
-          AppUi.sectionCard(
-            title: 'Топ-5',
-            icon: Icons.workspace_premium_outlined,
-            accent: const Color(0xFFF59E0B),
-            child: _top5Compact(),
-          ),
-          const SizedBox(height: 16),
-          AppUi.sectionCard(
-            title: 'Для партнёра',
-            icon: Icons.groups_rounded,
-            accent: const Color(0xFF8B5CF6),
-            child: _partnerCompact(),
-          ),
-        ],
+        ),
       ),
     );
   }

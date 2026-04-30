@@ -363,7 +363,7 @@ class _SalesPageState extends State<SalesPage> {
           'Продажи',
           style: TextStyle(
             color: AppColors.textMain,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w900,
             fontSize: 24,
           ),
         ),
@@ -392,295 +392,326 @@ class _SalesPageState extends State<SalesPage> {
           : RefreshIndicator(
         onRefresh: _loadSales,
         color: AppColors.primary,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: AppUi.cardDecoration(
-                radius: 28,
-                borderColor: AppColors.primary.withOpacity(0.22),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withOpacity(0.02),
-                    AppColors.primary.withOpacity(0.07),
-                  ],
-                ),
-                shadows: [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.12),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Список продаж',
-                    style: TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Поиск, фильтры, каналы и просмотр прибыли по каждой продаже.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            AppUi.metricCard(
-              icon: Icons.shopping_bag_outlined,
-              title: 'Количество продаж',
-              value: _filteredSales.length.toString(),
-              accentColors: const [
-                Color(0xFF4DA3FF),
-                Color(0xFF2D7DFF),
-              ],
-            ),
-            const SizedBox(height: 12),
-            AppUi.metricCard(
-              icon: Icons.payments_outlined,
-              title: 'Выручка',
-              value: '${_formatMoney(totalRevenue)} ₸',
-              accentColors: const [
-                Color(0xFF8B5CF6),
-                Color(0xFF6D28D9),
-              ],
-            ),
-            const SizedBox(height: 12),
-            AppUi.metricCard(
-              icon: Icons.trending_up,
-              title: 'Прибыль',
-              value: '${_formatMoney(totalProfit)} ₸',
-              accentColors: const [
-                Color(0xFF22C55E),
-                Color(0xFF16A34A),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
               children: [
-                Expanded(
-                  child: AppUi.metricCard(
-                    icon: Icons.storefront_outlined,
-                    title: 'Каспий',
-                    value: kaspiCount.toString(),
-                    accentColors: const [
-                      Color(0xFF06B6D4),
-                      Color(0xFF0891B2),
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: AppUi.cardDecoration(
+                    radius: 28,
+                    borderColor: AppColors.primary.withOpacity(0.22),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withOpacity(0.02),
+                        AppColors.primary.withOpacity(0.07),
+                      ],
+                    ),
+                    shadows: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.12),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
                     ],
-                    compact: true,
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Список продаж',
+                        style: TextStyle(
+                          color: AppColors.textMain,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Поиск, фильтры, каналы и прибыль по каждой продаже.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: AppUi.metricCard(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'ОПТ',
-                    value: optCount.toString(),
-                    accentColors: const [
-                      Color(0xFFF59E0B),
-                      Color(0xFFD97706),
-                    ],
-                    compact: true,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Container(
-              decoration: AppUi.cardDecoration(radius: 22),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
+                const SizedBox(height: 16),
+                Row(
                   children: [
-                    TextField(
-                      controller: _searchController,
-                      style: const TextStyle(color: AppColors.textMain),
-                      decoration: InputDecoration(
-                        hintText: 'Поиск по товару / заказу / каналу',
-                        hintStyle: const TextStyle(
-                          color: AppColors.textSecondary,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: AppColors.textSecondary,
-                        ),
-                        filled: true,
-                        fillColor: AppColors.bg,
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(
-                            color: AppColors.stroke,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          AppUi.periodButton(
-                            title: 'Сегодня',
-                            selected: _selectedPeriod == 'Сегодня',
-                            onTap: () {
-                              setState(() {
-                                _selectedPeriod = 'Сегодня';
-                                _applyPresetPeriod('Сегодня',
-                                    refresh: false);
-                              });
-                              _applyFilters();
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          AppUi.periodButton(
-                            title: '7 дней',
-                            selected: _selectedPeriod == '7 дней',
-                            onTap: () {
-                              setState(() {
-                                _selectedPeriod = '7 дней';
-                                _applyPresetPeriod('7 дней',
-                                    refresh: false);
-                              });
-                              _applyFilters();
-                            },
-                            accentColors: const [
-                              Color(0xFF8B5CF6),
-                              Color(0xFF6D28D9),
-                            ],
-                          ),
-                          const SizedBox(width: 8),
-                          AppUi.periodButton(
-                            title: '30 дней',
-                            selected: _selectedPeriod == '30 дней',
-                            onTap: () {
-                              setState(() {
-                                _selectedPeriod = '30 дней';
-                                _applyPresetPeriod('30 дней',
-                                    refresh: false);
-                              });
-                              _applyFilters();
-                            },
-                            accentColors: const [
-                              Color(0xFF22C55E),
-                              Color(0xFF16A34A),
-                            ],
-                          ),
-                          const SizedBox(width: 8),
-                          AppUi.periodButton(
-                            title: 'Всё',
-                            selected: _selectedPeriod == 'Всё',
-                            onTap: () {
-                              setState(() {
-                                _selectedPeriod = 'Всё';
-                                _applyPresetPeriod('Всё',
-                                    refresh: false);
-                              });
-                              _applyFilters();
-                            },
-                            accentColors: const [
-                              Color(0xFFF59E0B),
-                              Color(0xFFD97706),
-                            ],
-                          ),
+                    Expanded(
+                      child: AppUi.metricCard(
+                        icon: Icons.shopping_bag_outlined,
+                        title: 'Продаж',
+                        value: _filteredSales.length.toString(),
+                        accentColors: const [
+                          Color(0xFF4DA3FF),
+                          Color(0xFF2D7DFF),
                         ],
+                        compact: true,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: () => _pickDate(isFrom: true),
-                            child: AppUi.dateBox(
-                              title: 'С',
-                              value: _dateFrom == null
-                                  ? 'Не выбрано'
-                                  : '${_dateFrom!.day.toString().padLeft(2, '0')}.${_dateFrom!.month.toString().padLeft(2, '0')}.${_dateFrom!.year}',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: () => _pickDate(isFrom: false),
-                            child: AppUi.dateBox(
-                              title: 'По',
-                              value: _dateTo == null
-                                  ? 'Не выбрано'
-                                  : '${_dateTo!.day.toString().padLeft(2, '0')}.${_dateTo!.month.toString().padLeft(2, '0')}.${_dateTo!.year}',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: _selectedChannel,
-                      dropdownColor: AppColors.card,
-                      style:
-                      const TextStyle(color: AppColors.textMain),
-                      iconEnabledColor: AppColors.textSecondary,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: AppColors.bg,
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(
-                            color: AppColors.stroke,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(
-                            color: AppColors.primary,
-                          ),
-                        ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppUi.metricCard(
+                        icon: Icons.trending_up,
+                        title: 'Прибыль',
+                        value: '${_formatMoney(totalProfit)} ₸',
+                        accentColors: const [
+                          Color(0xFF22C55E),
+                          Color(0xFF16A34A),
+                        ],
+                        compact: true,
                       ),
-                      items: const [
-                        DropdownMenuItem(value: 'Все', child: Text('Все')),
-                        DropdownMenuItem(
-                            value: 'Каспий', child: Text('Каспий')),
-                        DropdownMenuItem(value: 'ОПТ', child: Text('ОПТ')),
-                      ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedChannel = value ?? 'Все';
-                        });
-                        _applyFilters();
-                      },
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 12),
+                AppUi.metricCard(
+                  icon: Icons.payments_outlined,
+                  title: 'Выручка',
+                  value: '${_formatMoney(totalRevenue)} ₸',
+                  accentColors: const [
+                    Color(0xFF8B5CF6),
+                    Color(0xFF6D28D9),
+                  ],
+                  compact: true,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppUi.metricCard(
+                        icon: Icons.storefront_outlined,
+                        title: 'Каспий',
+                        value: kaspiCount.toString(),
+                        accentColors: const [
+                          Color(0xFF06B6D4),
+                          Color(0xFF0891B2),
+                        ],
+                        compact: true,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppUi.metricCard(
+                        icon: Icons.local_shipping_outlined,
+                        title: 'ОПТ',
+                        value: optCount.toString(),
+                        accentColors: const [
+                          Color(0xFFF59E0B),
+                          Color(0xFFD97706),
+                        ],
+                        compact: true,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  decoration: AppUi.cardDecoration(radius: 22),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _searchController,
+                          style: const TextStyle(color: AppColors.textMain),
+                          decoration: InputDecoration(
+                            hintText: 'Поиск по товару / заказу / каналу',
+                            hintStyle: const TextStyle(
+                              color: AppColors.textSecondary,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search,
+                              color: AppColors.textSecondary,
+                            ),
+                            filled: true,
+                            fillColor: AppColors.bg,
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(
+                                color: AppColors.stroke,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              AppUi.periodButton(
+                                title: 'Сегодня',
+                                selected: _selectedPeriod == 'Сегодня',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPeriod = 'Сегодня';
+                                    _applyPresetPeriod(
+                                      'Сегодня',
+                                      refresh: false,
+                                    );
+                                  });
+                                  _applyFilters();
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              AppUi.periodButton(
+                                title: '7 дней',
+                                selected: _selectedPeriod == '7 дней',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPeriod = '7 дней';
+                                    _applyPresetPeriod(
+                                      '7 дней',
+                                      refresh: false,
+                                    );
+                                  });
+                                  _applyFilters();
+                                },
+                                accentColors: const [
+                                  Color(0xFF8B5CF6),
+                                  Color(0xFF6D28D9),
+                                ],
+                              ),
+                              const SizedBox(width: 8),
+                              AppUi.periodButton(
+                                title: '30 дней',
+                                selected: _selectedPeriod == '30 дней',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPeriod = '30 дней';
+                                    _applyPresetPeriod(
+                                      '30 дней',
+                                      refresh: false,
+                                    );
+                                  });
+                                  _applyFilters();
+                                },
+                                accentColors: const [
+                                  Color(0xFF22C55E),
+                                  Color(0xFF16A34A),
+                                ],
+                              ),
+                              const SizedBox(width: 8),
+                              AppUi.periodButton(
+                                title: 'Всё',
+                                selected: _selectedPeriod == 'Всё',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPeriod = 'Всё';
+                                    _applyPresetPeriod(
+                                      'Всё',
+                                      refresh: false,
+                                    );
+                                  });
+                                  _applyFilters();
+                                },
+                                accentColors: const [
+                                  Color(0xFFF59E0B),
+                                  Color(0xFFD97706),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () => _pickDate(isFrom: true),
+                                child: AppUi.dateBox(
+                                  title: 'С',
+                                  value: _dateFrom == null
+                                      ? 'Не выбрано'
+                                      : '${_dateFrom!.day.toString().padLeft(2, '0')}.${_dateFrom!.month.toString().padLeft(2, '0')}.${_dateFrom!.year}',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(18),
+                                onTap: () => _pickDate(isFrom: false),
+                                child: AppUi.dateBox(
+                                  title: 'По',
+                                  value: _dateTo == null
+                                      ? 'Не выбрано'
+                                      : '${_dateTo!.day.toString().padLeft(2, '0')}.${_dateTo!.month.toString().padLeft(2, '0')}.${_dateTo!.year}',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: _selectedChannel,
+                          dropdownColor: AppColors.card,
+                          style: const TextStyle(color: AppColors.textMain),
+                          iconEnabledColor: AppColors.textSecondary,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: AppColors.bg,
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(
+                                color: AppColors.stroke,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: const BorderSide(
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'Все',
+                              child: Text('Все'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Каспий',
+                              child: Text('Каспий'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ОПТ',
+                              child: Text('ОПТ'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedChannel = value ?? 'Все';
+                            });
+                            _applyFilters();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                if (_filteredSales.isEmpty)
+                  AppUi.emptyBlock('По выбранным фильтрам продаж нет')
+                else
+                  ..._filteredSales.map(_buildSaleCard),
+              ],
             ),
-            const SizedBox(height: 18),
-            if (_filteredSales.isEmpty)
-              AppUi.emptyBlock('По выбранным фильтрам продаж нет')
-            else
-              ..._filteredSales.map(_buildSaleCard),
-          ],
+          ),
         ),
       ),
     );

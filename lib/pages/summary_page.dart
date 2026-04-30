@@ -19,6 +19,10 @@ class _SummaryPageState extends State<SummaryPage> {
 
   String _selectedModel = 'Текущая';
 
+  String _period = '30 дней';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
   final TextEditingController stasCapitalCtrl = TextEditingController();
   final TextEditingController alexCapitalCtrl = TextEditingController();
   final TextEditingController stasWorkCtrl = TextEditingController();
@@ -27,6 +31,7 @@ class _SummaryPageState extends State<SummaryPage> {
   @override
   void initState() {
     super.initState();
+    _setLastDays(30, load: false);
     _loadModel();
   }
 
@@ -39,6 +44,22 @@ class _SummaryPageState extends State<SummaryPage> {
     super.dispose();
   }
 
+  String _apiDate(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _uiDate(DateTime? date) {
+    if (date == null) return 'Не выбрано';
+    return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _periodText() {
+    if (_dateFrom == null && _dateTo == null) return 'Весь период';
+    return '${_uiDate(_dateFrom)} — ${_uiDate(_dateTo)}';
+  }
+
   Future<void> _loadModel() async {
     try {
       setState(() {
@@ -47,7 +68,11 @@ class _SummaryPageState extends State<SummaryPage> {
       });
 
       final distribution = await ApiService.fetchDistribution();
-      final analytics = await ApiService.fetchAnalytics();
+
+      final analytics = await ApiService.fetchAnalytics(
+        dateFrom: _dateFrom == null ? null : _apiDate(_dateFrom!),
+        dateTo: _dateTo == null ? null : _apiDate(_dateTo!),
+      );
 
       setState(() {
         _rows = distribution;
@@ -66,6 +91,90 @@ class _SummaryPageState extends State<SummaryPage> {
         _loading = false;
       });
     }
+  }
+
+  void _setToday({bool load = true}) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _period = 'Сегодня';
+      _dateFrom = today;
+      _dateTo = today;
+    });
+
+    if (load) _loadModel();
+  }
+
+  void _setLastDays(int days, {bool load = true}) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _period = '$days дней';
+      _dateFrom = today.subtract(Duration(days: days - 1));
+      _dateTo = today;
+    });
+
+    if (load) _loadModel();
+  }
+
+  void _setAll({bool load = true}) {
+    setState(() {
+      _period = 'Все';
+      _dateFrom = null;
+      _dateTo = null;
+    });
+
+    if (load) _loadModel();
+  }
+
+  Future<void> _pickFromDate() async {
+    final now = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateFrom ?? now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _period = 'Период';
+      _dateFrom = DateTime(picked.year, picked.month, picked.day);
+
+      if (_dateTo != null && _dateFrom!.isAfter(_dateTo!)) {
+        _dateTo = _dateFrom;
+      }
+    });
+
+    _loadModel();
+  }
+
+  Future<void> _pickToDate() async {
+    final now = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dateTo ?? now,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _period = 'Период';
+      _dateTo = DateTime(picked.year, picked.month, picked.day);
+
+      if (_dateFrom != null && _dateTo!.isBefore(_dateFrom!)) {
+        _dateFrom = _dateTo;
+      }
+    });
+
+    _loadModel();
   }
 
   String _cleanInput(dynamic value) {
@@ -293,6 +402,83 @@ class _SummaryPageState extends State<SummaryPage> {
     );
   }
 
+  Widget _periodButton(String title, VoidCallback onTap) {
+    final selected = _period == title;
+
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFF22C55E).withOpacity(0.22)
+                : AppColors.bg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF22C55E).withOpacity(0.55)
+                  : AppColors.stroke,
+            ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              color: selected ? AppColors.textMain : AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dateBox({
+    required String label,
+    required DateTime? date,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.stroke),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _uiDate(date),
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _line(String label, String value, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -313,6 +499,54 @@ class _SummaryPageState extends State<SummaryPage> {
               color: AppColors.textMain,
               fontSize: 13,
               fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _periodCard() {
+    return AppUi.sectionCard(
+      title: 'Период модели',
+      icon: Icons.date_range_outlined,
+      accent: const Color(0xFF22C55E),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _periodButton('Сегодня', _setToday),
+              const SizedBox(width: 8),
+              _periodButton('7 дней', () => _setLastDays(7)),
+              const SizedBox(width: 8),
+              _periodButton('30 дней', () => _setLastDays(30)),
+              const SizedBox(width: 8),
+              _periodButton('Все', _setAll),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _dateBox(
+                label: 'С',
+                date: _dateFrom,
+                onTap: _pickFromDate,
+              ),
+              const SizedBox(width: 12),
+              _dateBox(
+                label: 'По',
+                date: _dateTo,
+                onTap: _pickToDate,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Сейчас считается: ${_periodText()}',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -437,7 +671,7 @@ class _SummaryPageState extends State<SummaryPage> {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      'Здесь задаются вложения, работа и сценарий распределения прибыли.',
+                      'Здесь задаются вложения, работа, период и сценарий распределения прибыли.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 14,
@@ -447,6 +681,10 @@ class _SummaryPageState extends State<SummaryPage> {
                   ],
                 ),
               ),
+              const SizedBox(height: 16),
+
+              _periodCard(),
+
               const SizedBox(height: 16),
 
               AppUi.sectionCard(
@@ -518,10 +756,16 @@ class _SummaryPageState extends State<SummaryPage> {
                 accent: const Color(0xFF4DA3FF),
                 child: Column(
                   children: [
+                    _line('Период', _periodText()),
+                    const Divider(color: AppColors.stroke, height: 24),
                     _line('Стас', _formatMoney(resultStas), bold: true),
-                    _line('Алексей', _formatMoney(resultAlex), bold: true),
-                    _line('Доля Стаса', _formatPercent(resultStasShare)),
-                    _line('Доля Алексея', _formatPercent(resultAlexShare)),
+                    _line(
+                        'Алексей', _formatMoney(resultAlex),
+                        bold: true),
+                    _line('Доля Стаса',
+                        _formatPercent(resultStasShare)),
+                    _line('Доля Алексея',
+                        _formatPercent(resultAlexShare)),
                     _line(
                       'Общая чистая прибыль',
                       _formatMoney(_netProfit),
@@ -548,20 +792,30 @@ class _SummaryPageState extends State<SummaryPage> {
                 child: Column(
                   children: [
                     _line('Вложения Стас', _formatMoney(stasInvest)),
-                    _line('Вложения Алексей', _formatMoney(alexInvest)),
+                    _line('Вложения Алексей',
+                        _formatMoney(alexInvest)),
                     _line('Всего вложений', _formatMoney(totalInvest)),
                     const Divider(color: AppColors.stroke, height: 24),
-                    _line('Доля вложений Стас', _formatPercent(stasCapitalShare)),
-                    _line('Доля вложений Алексей', _formatPercent(alexCapitalShare)),
-                    _line('Баллы работы Стас', stasWorkPoints.toStringAsFixed(0)),
-                    _line('Баллы работы Алексей', alexWorkPoints.toStringAsFixed(0)),
-                    _line('Доля работы Стас', _formatPercent(stasWorkShare)),
-                    _line('Доля работы Алексей', _formatPercent(alexWorkShare)),
+                    _line('Доля вложений Стас',
+                        _formatPercent(stasCapitalShare)),
+                    _line('Доля вложений Алексей',
+                        _formatPercent(alexCapitalShare)),
+                    _line('Баллы работы Стас',
+                        stasWorkPoints.toStringAsFixed(0)),
+                    _line('Баллы работы Алексей',
+                        alexWorkPoints.toStringAsFixed(0)),
+                    _line('Доля работы Стас',
+                        _formatPercent(stasWorkShare)),
+                    _line('Доля работы Алексей',
+                        _formatPercent(alexWorkShare)),
                     const Divider(color: AppColors.stroke, height: 24),
-                    _line('Вес капитала', _formatPercent(capitalWeight)),
+                    _line('Вес капитала',
+                        _formatPercent(capitalWeight)),
                     _line('Вес работы', _formatPercent(workWeight)),
-                    _line('Итоговая доля Стас', _formatPercent(stasFinalShare)),
-                    _line('Итоговая доля Алексей', _formatPercent(alexFinalShare)),
+                    _line('Итоговая доля Стас',
+                        _formatPercent(stasFinalShare)),
+                    _line('Итоговая доля Алексей',
+                        _formatPercent(alexFinalShare)),
                   ],
                 ),
               ),
