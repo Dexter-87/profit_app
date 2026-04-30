@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
@@ -11,27 +14,119 @@ class CreateOrderPage extends StatefulWidget {
 }
 
 class _CreateOrderPageState extends State<CreateOrderPage> {
-  String _selectedChannel = 'Каспий';
+  static const String baseUrl = 'http://localhost:8080';
+
+  String _selectedChannel = 'ОПТ';
+  bool _isSaving = false;
 
   final TextEditingController _productController = TextEditingController();
   final TextEditingController _quantityController =
   TextEditingController(text: '1');
+  final TextEditingController _costController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
+  final TextEditingController _clientController = TextEditingController();
 
   @override
   void dispose() {
     _productController.dispose();
     _quantityController.dispose();
+    _costController.dispose();
     _priceController.dispose();
     _commentController.dispose();
+    _clientController.dispose();
     super.dispose();
+  }
+
+  double _toDouble(String value) {
+    return double.tryParse(
+      value
+          .replaceAll('₸', '')
+          .replaceAll(' ', '')
+          .replaceAll(',', '.'),
+    ) ??
+        0;
+  }
+
+  int _toInt(String value) {
+    return int.tryParse(value.trim()) ?? 1;
   }
 
   List<Color> get _channelColors {
     return _selectedChannel == 'Каспий'
         ? const [Color(0xFF4DA3FF), Color(0xFF2D7DFF)]
         : const [Color(0xFF22C55E), Color(0xFF16A34A)];
+  }
+
+  Future<void> _saveOrder() async {
+    final name = _productController.text.trim();
+    final quantity = _toInt(_quantityController.text);
+    final cost = _toDouble(_costController.text);
+    final price = _toDouble(_priceController.text);
+    final comment = _commentController.text.trim();
+    final client = _clientController.text.trim();
+
+    if (name.isEmpty) {
+      _showMessage('Введите товар');
+      return;
+    }
+
+    if (quantity <= 0) {
+      _showMessage('Количество должно быть больше 0');
+      return;
+    }
+
+    if (price <= 0) {
+      _showMessage('Введите цену продажи');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/add-sale'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'quantity': quantity,
+          'cost': cost,
+          'price': price,
+          'comment': comment,
+          'client': client,
+          'channel': _selectedChannel,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        _productController.clear();
+        _quantityController.text = '1';
+        _costController.clear();
+        _priceController.clear();
+        _commentController.clear();
+        _clientController.clear();
+
+        _showMessage('Заказ сохранён. Добавлено строк: $quantity');
+      } else {
+        _showMessage('Ошибка сохранения: ${response.body}');
+      }
+    } catch (e) {
+      _showMessage('Не удалось подключиться к серверу: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
   }
 
   Widget _buildSectionTitle(String title, {Color accent = AppColors.primary}) {
@@ -153,11 +248,13 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (channel == 'Каспий')
-                const Icon(Icons.storefront_outlined, color: Colors.white, size: 18)
-              else
-                const Icon(Icons.local_shipping_outlined,
-                    color: Colors.white, size: 18),
+              Icon(
+                channel == 'Каспий'
+                    ? Icons.storefront_outlined
+                    : Icons.local_shipping_outlined,
+                color: isSelected ? Colors.white : AppColors.textSecondary,
+                size: 18,
+              ),
               const SizedBox(width: 8),
               Text(
                 channel,
@@ -188,13 +285,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             _channelColors.first.withOpacity(0.08),
           ],
         ),
-        shadows: [
-          BoxShadow(
-            color: _channelColors.first.withOpacity(0.14),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
@@ -228,7 +318,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             ),
             const SizedBox(height: 10),
             const Text(
-              'Выбери канал, заполни товар, количество, цену и комментарий. Позже сюда легко подключим таблицы и автоподстановку.',
+              'Заполни товар, себестоимость, цену и количество. После сохранения заказ сразу попадёт в Google Sheets.',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 14,
@@ -253,10 +343,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionTitle(
-              'Канал продаж',
-              accent: _channelColors.first,
-            ),
+            _buildSectionTitle('Канал продаж', accent: _channelColors.first),
             Row(
               children: [
                 _buildChannelButton(
@@ -271,10 +358,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               ],
             ),
             const SizedBox(height: 18),
-            _buildSectionTitle(
-              'Товар',
-              accent: _channelColors.first,
-            ),
+            _buildSectionTitle('Товар', accent: _channelColors.first),
             _buildInput(
               controller: _productController,
               hint: 'Введите модель товара',
@@ -282,10 +366,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               accentColors: _channelColors,
             ),
             const SizedBox(height: 14),
-            _buildSectionTitle(
-              'Количество',
-              accent: _channelColors.first,
+            _buildSectionTitle('Клиент', accent: _channelColors.first),
+            _buildInput(
+              controller: _clientController,
+              hint: 'Введите клиента',
+              icon: Icons.person_outline_rounded,
+              accentColors: _channelColors,
             ),
+            const SizedBox(height: 14),
+            _buildSectionTitle('Количество', accent: _channelColors.first),
             _buildInput(
               controller: _quantityController,
               hint: 'Введите количество',
@@ -294,25 +383,28 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               accentColors: _channelColors,
             ),
             const SizedBox(height: 14),
-            _buildSectionTitle(
-              'Цена',
-              accent: _channelColors.first,
+            _buildSectionTitle('Себестоимость', accent: _channelColors.first),
+            _buildInput(
+              controller: _costController,
+              hint: 'Введите себестоимость',
+              icon: Icons.price_change_outlined,
+              keyboardType: TextInputType.number,
+              accentColors: _channelColors,
             ),
+            const SizedBox(height: 14),
+            _buildSectionTitle('Цена продажи', accent: _channelColors.first),
             _buildInput(
               controller: _priceController,
-              hint: 'Введите цену продажи',
+              hint: 'Введите РРЦ / цену продажи',
               icon: Icons.payments_outlined,
               keyboardType: TextInputType.number,
               accentColors: _channelColors,
             ),
             const SizedBox(height: 14),
-            _buildSectionTitle(
-              'Комментарий',
-              accent: _channelColors.first,
-            ),
+            _buildSectionTitle('Комментарий', accent: _channelColors.first),
             _buildInput(
               controller: _commentController,
-              hint: 'Комментарий к заказу',
+              hint: 'Комментарий. Для 50/50 можно поставить +',
               icon: Icons.notes_rounded,
               maxLines: 3,
               accentColors: _channelColors,
@@ -321,18 +413,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             SizedBox(
               width: double.infinity,
               child: GradientButton(
-                text: 'СОХРАНИТЬ ЗАКАЗ',
+                text: _isSaving ? 'СОХРАНЯЮ...' : 'СОХРАНИТЬ ЗАКАЗ',
                 icon: Icons.save_outlined,
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        _selectedChannel == 'Каспий'
-                            ? 'Сохранение заказа Kaspi подключим следующим этапом'
-                            : 'Сохранение оптового заказа подключим следующим этапом',
-                      ),
-                    ),
-                  );
+                  if (_isSaving) return;
+                  _saveOrder();
                 },
               ),
             ),
@@ -344,16 +429,16 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   Widget _buildPreviewCard() {
     return AppUi.infoBlock(
-      title: 'Что будет дальше',
-      icon: Icons.auto_awesome_rounded,
+      title: 'Как сохранится',
+      icon: Icons.check_circle_outline_rounded,
       accent: _selectedChannel == 'Каспий'
           ? const Color(0xFF4DA3FF)
           : const Color(0xFF22C55E),
       items: [
-        'Поиск товара по прайсу',
-        'Автоподстановка цены и себестоимости',
-        'Добавление нескольких позиций в один заказ',
-        'Сохранение в таблицу и backend',
+        'Дата — сегодняшняя',
+        'Канал — $_selectedChannel',
+        'Если количество 3 — в таблицу добавятся 3 строки',
+        'Комментарий + сохранится как текст для логики 50/50',
       ],
     );
   }
