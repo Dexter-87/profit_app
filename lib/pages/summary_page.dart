@@ -228,34 +228,6 @@ class _SummaryPageState extends State<SummaryPage> {
     return row[column] ?? 0;
   }
 
-  dynamic _modelValue(String metric, String column, String model) {
-    final row = _rows.firstWhere(
-          (r) {
-        final rowMetric = (r['metric'] ?? '').toString().trim();
-        final rowModel = (r['model'] ?? '').toString().trim().toLowerCase();
-
-        if (rowMetric != metric) return false;
-
-        if (model == 'Текущая') {
-          return rowModel.contains('текущ') ||
-              rowModel.contains('стар') ||
-              rowModel.contains('fact');
-        }
-
-        if (model == 'Капитал + работа') {
-          return rowModel.contains('нов') ||
-              rowModel.contains('капитал') ||
-              rowModel.contains('работ');
-        }
-
-        return false;
-      },
-      orElse: () => <String, dynamic>{},
-    );
-
-    return row[column] ?? 0;
-  }
-
   double get _netProfit {
     final net = _toDouble(_analytics['netProfit']);
     if (net != 0) return net;
@@ -279,22 +251,28 @@ class _SummaryPageState extends State<SummaryPage> {
       final alexCapitalShare =
       totalCapital == 0 ? 0 : (alexCapital / totalCapital) * 100;
 
-      final stasWorkShare = totalWork == 0 ? 0 : (stasWork / totalWork) * 100;
-      final alexWorkShare = totalWork == 0 ? 0 : (alexWork / totalWork) * 100;
+      final stasWorkShare =
+      totalWork == 0 ? 0 : (stasWork / totalWork) * 100;
+      final alexWorkShare =
+      totalWork == 0 ? 0 : (alexWork / totalWork) * 100;
 
-      final capitalWeight = _toDouble(_value('Вес вложений', 'total')) == 0
+      final capitalWeight =
+      _toDouble(_value('Вес вложений', 'total')) == 0
           ? 50
           : _toDouble(_value('Вес вложений', 'total'));
 
-      final workWeight = _toDouble(_value('Вес работы', 'total')) == 0
+      final workWeight =
+      _toDouble(_value('Вес работы', 'total')) == 0
           ? 50
           : _toDouble(_value('Вес работы', 'total'));
 
-      final stasFinal = (stasCapitalShare * capitalWeight / 100) +
-          (stasWorkShare * workWeight / 100);
+      final stasFinal =
+          (stasCapitalShare * capitalWeight / 100) +
+              (stasWorkShare * workWeight / 100);
 
-      final alexFinal = (alexCapitalShare * capitalWeight / 100) +
-          (alexWorkShare * workWeight / 100);
+      final alexFinal =
+          (alexCapitalShare * capitalWeight / 100) +
+              (alexWorkShare * workWeight / 100);
 
       final rows = [
         {
@@ -583,22 +561,6 @@ class _SummaryPageState extends State<SummaryPage> {
 
   @override
   Widget build(BuildContext context) {
-    final stasInvest = _toDouble(_value('Вложения', 'stas'));
-    final alexInvest = _toDouble(_value('Вложения', 'alexey'));
-    final totalInvest = _toDouble(_value('Вложения', 'total'));
-
-    final stasCapitalShare = _toDouble(_value('Доля вложений', 'stas'));
-    final alexCapitalShare = _toDouble(_value('Доля вложений', 'alexey'));
-
-    final stasWorkPoints = _toDouble(_value('Баллы за работу', 'stas'));
-    final alexWorkPoints = _toDouble(_value('Баллы за работу', 'alexey'));
-
-    final stasWorkShare = _toDouble(_value('Доля работы', 'stas'));
-    final alexWorkShare = _toDouble(_value('Доля работы', 'alexey'));
-
-    final capitalWeight = _toDouble(_value('Вес вложений', 'total'));
-    final workWeight = _toDouble(_value('Вес работы', 'total'));
-
     final stasFinalShare = _toDouble(_value('Итоговая доля', 'stas'));
     final alexFinalShare = _toDouble(_value('Итоговая доля', 'alexey'));
 
@@ -615,15 +577,8 @@ class _SummaryPageState extends State<SummaryPage> {
     String note;
 
     if (_selectedModel == 'Текущая') {
-      final serverStas = _toDouble(
-        _modelValue('Чистая прибыль Стас', 'stas', 'Текущая'),
-      );
-      final serverAlex = _toDouble(
-        _modelValue('Чистая прибыль Алексей', 'alexey', 'Текущая'),
-      );
-
-      resultStas = serverStas == 0 ? myNet : serverStas;
-      resultAlex = serverAlex == 0 ? alexNet : serverAlex;
+      resultStas = myNet;
+      resultAlex = alexNet;
 
       final total = resultStas + resultAlex;
       resultStasShare = total == 0 ? 0 : (resultStas / total) * 100;
@@ -632,15 +587,8 @@ class _SummaryPageState extends State<SummaryPage> {
       note =
       'Текущая: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.';
     } else {
-      final serverStas = _toDouble(
-        _modelValue('Чистая прибыль Стас', 'stas', 'Капитал + работа'),
-      );
-      final serverAlex = _toDouble(
-        _modelValue('Чистая прибыль Алексей', 'alexey', 'Капитал + работа'),
-      );
-
-      resultStas = serverStas == 0 ? capitalWorkStas : serverStas;
-      resultAlex = serverAlex == 0 ? capitalWorkAlex : serverAlex;
+      resultStas = capitalWorkStas;
+      resultAlex = capitalWorkAlex;
 
       resultStasShare = stasFinalShare;
       resultAlexShare = alexFinalShare;
@@ -799,24 +747,15 @@ class _SummaryPageState extends State<SummaryPage> {
                     _line('Период', _periodText()),
                     const Divider(color: AppColors.stroke, height: 24),
                     _line('Стас', _formatMoney(resultStas), bold: true),
-                    _line(
-                      'Алексей',
-                      _formatMoney(resultAlex),
-                      bold: true,
-                    ),
-                    _line(
-                      'Доля Стаса',
-                      _formatPercent(resultStasShare),
-                    ),
-                    _line(
-                      'Доля Алексея',
-                      _formatPercent(resultAlexShare),
-                    ),
-                    _line(
-                      'Общая чистая прибыль',
-                      _formatMoney(_netProfit),
-                      bold: true,
-                    ),
+                    _line('Алексей', _formatMoney(resultAlex),
+                        bold: true),
+                    _line('Доля Стаса',
+                        _formatPercent(resultStasShare)),
+                    _line('Доля Алексея',
+                        _formatPercent(resultAlexShare)),
+                    _line('Общая чистая прибыль',
+                        _formatMoney(_netProfit),
+                        bold: true),
                     const Divider(color: AppColors.stroke, height: 24),
                     Text(
                       note,
@@ -825,58 +764,6 @@ class _SummaryPageState extends State<SummaryPage> {
                         fontSize: 13,
                         height: 1.35,
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Параметры модели',
-                icon: Icons.tune_rounded,
-                accent: const Color(0xFF8B5CF6),
-                child: Column(
-                  children: [
-                    _line('Вложения Стас', _formatMoney(stasInvest)),
-                    _line(
-                      'Вложения Алексей',
-                      _formatMoney(alexInvest),
-                    ),
-                    _line('Всего вложений', _formatMoney(totalInvest)),
-                    const Divider(color: AppColors.stroke, height: 24),
-                    _line(
-                      'Доля вложений Стас',
-                      _formatPercent(stasCapitalShare),
-                    ),
-                    _line(
-                      'Доля вложений Алексей',
-                      _formatPercent(alexCapitalShare),
-                    ),
-                    _line(
-                      'Баллы работы Стас',
-                      stasWorkPoints.toStringAsFixed(0),
-                    ),
-                    _line(
-                      'Баллы работы Алексей',
-                      alexWorkPoints.toStringAsFixed(0),
-                    ),
-                    _line(
-                      'Доля работы Стас',
-                      _formatPercent(stasWorkShare),
-                    ),
-                    _line(
-                      'Доля работы Алексей',
-                      _formatPercent(alexWorkShare),
-                    ),
-                    const Divider(color: AppColors.stroke, height: 24),
-                    _line('Вес капитала', _formatPercent(capitalWeight)),
-                    _line('Вес работы', _formatPercent(workWeight)),
-                    _line(
-                      'Итоговая доля Стас',
-                      _formatPercent(stasFinalShare),
-                    ),
-                    _line(
-                      'Итоговая доля Алексей',
-                      _formatPercent(alexFinalShare),
                     ),
                   ],
                 ),

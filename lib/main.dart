@@ -46,14 +46,14 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      const HomePage(), // 0
-      const SalesPage(),         // 1
-      const AnalyticsPage(),     // 2
-      const CreateOrderPage(),   // 3
-      const SummaryPage(),       // 4
-      const PlanPage(),           // 5
-      const ExpensesPage(),      // 6
+    final pages = <Widget>[
+      const HomePage(),
+      const SalesPage(),
+      const AnalyticsPage(),
+      const CreateOrderPage(),
+      const SummaryPage(),
+      const PlanPage(),
+      const ExpensesPage(),
     ];
 
     return Scaffold(
@@ -66,13 +66,34 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.white54,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Главная'),
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_bag), label: 'Продажи'),
-          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Аналитика'),
-          BottomNavigationBarItem(icon: Icon(Icons.add_box), label: 'Заказ'),
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Модель работы'),
-          BottomNavigationBarItem(icon: Icon(Icons.flag), label: 'План'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Расходы'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Главная',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_bag),
+            label: 'Продажи',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart),
+            label: 'Аналитика',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add_box),
+            label: 'Заказ',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard),
+            label: 'Модель работы',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.flag),
+            label: 'План',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long),
+            label: 'Расходы',
+          ),
         ],
       ),
     );

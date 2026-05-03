@@ -17,11 +17,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, dynamic> _data = {};
 
   String _selectedPeriod = '30 дней';
+  String _selectedModel = 'current';
+
   DateTime? _dateFrom;
   DateTime? _dateTo;
 
-  final double revenuePlan = 10000000;
-  final double profitPlan = 800000;
+  final double defaultRevenuePlan = 10000000;
+  final double defaultProfitPlan = 800000;
 
   @override
   void initState() {
@@ -47,6 +49,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       final result = await ApiService.fetchAnalytics(
         dateFrom: _formatApiDate(_dateFrom),
         dateTo: _formatApiDate(_dateTo),
+        model: _selectedModel,
       );
 
       setState(() {
@@ -61,23 +64,30 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     }
   }
 
+  void _changeModel(String model) {
+    setState(() {
+      _selectedModel = model;
+    });
+
+    _loadAnalytics();
+  }
+
   void _applyPresetPeriod(String period, {bool load = true}) {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
     setState(() {
       _selectedPeriod = period;
 
       if (period == 'Сегодня') {
-        _dateFrom = DateTime(now.year, now.month, now.day);
-        _dateTo = DateTime(now.year, now.month, now.day);
+        _dateFrom = today;
+        _dateTo = today;
       } else if (period == '7 дней') {
-        _dateFrom = DateTime(now.year, now.month, now.day)
-            .subtract(const Duration(days: 6));
-        _dateTo = DateTime(now.year, now.month, now.day);
+        _dateFrom = today.subtract(const Duration(days: 6));
+        _dateTo = today;
       } else if (period == '30 дней') {
-        _dateFrom = DateTime(now.year, now.month, now.day)
-            .subtract(const Duration(days: 29));
-        _dateTo = DateTime(now.year, now.month, now.day);
+        _dateFrom = today.subtract(const Duration(days: 29));
+        _dateTo = today;
       } else {
         _dateFrom = null;
         _dateTo = null;
@@ -100,12 +110,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (picked != null) {
       setState(() {
         _selectedPeriod = 'Свои даты';
+
         if (isFrom) {
           _dateFrom = picked;
         } else {
           _dateTo = picked;
         }
       });
+
       _loadAnalytics();
     }
   }
@@ -114,25 +126,36 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
 
-    final cleaned = value.toString().replaceAll(' ', '').replaceAll(',', '.');
+    final cleaned = value
+        .toString()
+        .replaceAll('₸', '')
+        .replaceAll('%', '')
+        .replaceAll(' ', '')
+        .replaceAll(',', '.');
+
     return double.tryParse(cleaned) ?? 0;
   }
 
   String _formatMoney(dynamic value) {
     final number = _toDouble(value).round().toString();
+    final isNegative = number.startsWith('-');
+    final cleanNumber = number.replaceAll('-', '');
+
     final buffer = StringBuffer();
     int counter = 0;
 
-    for (int i = number.length - 1; i >= 0; i--) {
-      buffer.write(number[i]);
+    for (int i = cleanNumber.length - 1; i >= 0; i--) {
+      buffer.write(cleanNumber[i]);
       counter++;
+
       if (counter == 3 && i != 0) {
         buffer.write(' ');
         counter = 0;
       }
     }
 
-    return '${buffer.toString().split('').reversed.join()} ₸';
+    final result = buffer.toString().split('').reversed.join();
+    return '${isNegative ? '-' : ''}$result ₸';
   }
 
   String _formatPercent(dynamic value) {
@@ -141,9 +164,57 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
   String _formatDisplayDate(DateTime? date) {
     if (date == null) return 'Не выбрано';
+
     return '${date.day.toString().padLeft(2, '0')}.'
         '${date.month.toString().padLeft(2, '0')}.'
         '${date.year}';
+  }
+
+  List<dynamic> _safeList(dynamic value) {
+    if (value is List) return value;
+    return [];
+  }
+
+  Widget _modelButton({
+    required String title,
+    required String value,
+  }) {
+    final selected = _selectedModel == value;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _changeModel(value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: selected
+                ? const LinearGradient(
+              colors: [
+                Color(0xFF22C55E),
+                Color(0xFF16A34A),
+              ],
+            )
+                : null,
+            color: selected ? null : AppColors.bg,
+            border: Border.all(
+              color: selected
+                  ? Colors.transparent
+                  : AppColors.stroke.withOpacity(0.8),
+            ),
+          ),
+          child: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? Colors.white : AppColors.textSecondary,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _bullet(String text, {Color accent = AppColors.primary}) {
@@ -277,6 +348,87 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     );
   }
 
+  Widget _brandRow(Map<String, dynamic> item) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: AppUi.cardDecoration(
+        color: AppColors.bg,
+        radius: 18,
+        borderColor: AppColors.stroke.withOpacity(0.75),
+        shadows: const [],
+      ),
+      child: Column(
+        children: [
+          _statRow(
+            (item['brand'] ?? 'Другое').toString(),
+            '${(item['count'] ?? 0).toString()} шт',
+            bold: true,
+          ),
+          _statRow('Выручка', _formatMoney(item['revenue'])),
+          _statRow('Прибыль', _formatMoney(item['profit'])),
+          _statRow('Стас', _formatMoney(item['myProfit'])),
+          _statRow('Алексей', _formatMoney(item['alexProfit'])),
+        ],
+      ),
+    );
+  }
+
+  Widget _clientRow(Map<String, dynamic> item, int index, double totalProfit) {
+    final client = (item['client'] ?? 'Без клиента').toString();
+    final revenue = _toDouble(item['revenue']);
+    final profit = _toDouble(item['profit']);
+    final count = (item['count'] ?? 0).toString();
+    final share = totalProfit == 0 ? 0 : (profit / totalProfit) * 100;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: AppUi.cardDecoration(
+        color: AppColors.bg,
+        radius: 18,
+        borderColor: const Color(0xFF4DA3FF).withOpacity(0.25),
+        shadows: const [],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              AppUi.iconBadge(
+                icon: Icons.person_outline,
+                accent: const Color(0xFF4DA3FF),
+                size: 34,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$index. $client',
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                _formatPercent(share),
+                style: const TextStyle(
+                  color: Color(0xFF22C55E),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _statRow('Выручка', _formatMoney(revenue)),
+          _statRow('Прибыль', _formatMoney(profit), bold: true),
+          _statRow('Продаж', count),
+        ],
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final revenue = _toDouble(_data['revenue']);
@@ -286,6 +438,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final expenses = _toDouble(_data['expenses']);
     final myNet = _toDouble(_data['myNet']);
     final alexNet = _toDouble(_data['alexNet']);
+
     final salesCount = (_data['salesCount'] ?? 0).toString();
     final avgCheck = _toDouble(_data['avgCheck']);
     final avgProfit = _toDouble(_data['avgProfit']);
@@ -299,13 +452,31 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final optProfit = _toDouble(_data['optProfit']);
     final optCount = (_data['optCount'] ?? 0).toString();
 
-    final topProducts = (_data['topProducts'] as List?) ?? [];
-    final dailyProfit = (_data['dailyProfit'] as List?) ?? [];
+    final revenuePlan = _toDouble(_data['revenuePlan']) > 0
+        ? _toDouble(_data['revenuePlan'])
+        : defaultRevenuePlan;
+
+    final stasPlan = _toDouble(_data['stasPlan']) > 0
+        ? _toDouble(_data['stasPlan'])
+        : defaultProfitPlan;
+
+    final alexPlan = _toDouble(_data['alexPlan']) > 0
+        ? _toDouble(_data['alexPlan'])
+        : defaultProfitPlan;
+
+    final topProducts = _safeList(_data['topProducts']);
+    final dailyProfit = _safeList(_data['dailyProfit']);
+    final brands = _safeList(_data['brands']);
+    final clients = _safeList(_data['clients']);
 
     final revenueProgress =
     revenuePlan == 0 ? 0.0 : (revenue / revenuePlan).clamp(0.0, 1.0);
-    final profitProgress =
-    profitPlan == 0 ? 0.0 : (myNet / profitPlan).clamp(0.0, 1.0);
+
+    final stasProgress =
+    stasPlan == 0 ? 0.0 : (myNet / stasPlan).clamp(0.0, 1.0);
+
+    final alexProgress =
+    alexPlan == 0 ? 0.0 : (alexNet / alexPlan).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -365,14 +536,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                         const Color(0xFF8B5CF6).withOpacity(0.08),
                       ],
                     ),
-                    shadows: [
-                      BoxShadow(
-                        color: const Color(0xFF8B5CF6)
-                            .withOpacity(0.12),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
                   ),
                   child: const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,7 +550,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Прибыль, каналы, распределение доходов и выполнение плана.',
+                        'Прибыль, каналы, бренды, распределение доходов и выполнение плана.',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 14,
@@ -397,7 +560,36 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
+                AppUi.sectionCard(
+                  title: 'Топ клиентов',
+                  icon: Icons.people_alt_outlined,
+                  accent: const Color(0xFF4DA3FF),
+                  child: clients.isEmpty
+                      ? AppUi.emptyBlock('Нет данных по клиентам')
+                      : Column(
+                    children: List.generate(
+                      clients.length,
+                          (index) {
+                        final item = Map<String, dynamic>.from(
+                          clients[index] as Map,
+                        );
+
+                        return _clientRow(
+                          item,
+                          index + 1,
+                          totalProfit,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+
                 Container(
                   decoration: AppUi.cardDecoration(radius: 22),
                   child: Padding(
@@ -422,10 +614,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                                 _selectedPeriod == '7 дней',
                                 onTap: () =>
                                     _applyPresetPeriod('7 дней'),
-                                accentColors: const [
-                                  Color(0xFF8B5CF6),
-                                  Color(0xFF6D28D9),
-                                ],
                               ),
                               const SizedBox(width: 8),
                               AppUi.periodButton(
@@ -434,10 +622,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                                 _selectedPeriod == '30 дней',
                                 onTap: () =>
                                     _applyPresetPeriod('30 дней'),
-                                accentColors: const [
-                                  Color(0xFF22C55E),
-                                  Color(0xFF16A34A),
-                                ],
                               ),
                               const SizedBox(width: 8),
                               AppUi.periodButton(
@@ -445,10 +629,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                                 selected: _selectedPeriod == 'Всё',
                                 onTap: () =>
                                     _applyPresetPeriod('Всё'),
-                                accentColors: const [
-                                  Color(0xFFF59E0B),
-                                  Color(0xFFD97706),
-                                ],
                               ),
                             ],
                           ),
@@ -488,7 +668,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 Row(
                   children: [
                     Expanded(
@@ -518,7 +700,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
+
                 Row(
                   children: [
                     Expanded(
@@ -548,7 +732,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
+
                 AppUi.metricCard(
                   icon: Icons.receipt_long_outlined,
                   title: 'Расходы',
@@ -559,7 +745,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   ],
                   compact: true,
                 ),
+
                 const SizedBox(height: 16),
+
                 AppUi.sectionCard(
                   title: 'Ключевые показатели',
                   icon: Icons.grid_view_rounded,
@@ -579,7 +767,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 AppUi.sectionCard(
                   title: 'Каналы',
                   icon: Icons.account_tree_outlined,
@@ -614,7 +804,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 AppUi.sectionCard(
                   title: 'План / факт',
                   icon: Icons.flag_outlined,
@@ -636,24 +828,129 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       AppUi.progressBlock(
                         title: 'План чистой прибыли Стаса',
                         currentLabel: _formatMoney(myNet),
-                        totalLabel: _formatMoney(profitPlan),
-                        progress: profitProgress,
+                        totalLabel: _formatMoney(stasPlan),
+                        progress: stasProgress,
                         accentColors: const [
                           Color(0xFF22C55E),
                           Color(0xFF16A34A),
                         ],
                       ),
+                      const SizedBox(height: 16),
+                      AppUi.progressBlock(
+                        title: 'План чистой прибыли Алексея',
+                        currentLabel: _formatMoney(alexNet),
+                        totalLabel: _formatMoney(alexPlan),
+                        progress: alexProgress,
+                        accentColors: const [
+                          Color(0xFFF59E0B),
+                          Color(0xFFD97706),
+                        ],
+                      ),
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
+                AppUi.sectionCard(
+                  title: 'Бренды',
+                  icon: Icons.sell_outlined,
+                  accent: const Color(0xFF06B6D4),
+                  child: brands.isEmpty
+                      ? AppUi.emptyBlock('Нет данных по брендам')
+                      : Column(
+                    children: List.generate(
+                      brands.length,
+                          (index) {
+                        final item =
+                        Map<String, dynamic>.from(
+                          brands[index] as Map,
+                        );
+                        return _brandRow(item);
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ===== КЛИЕНТЫ =====
+                if (_data['clients'] != null) ...[
+                  const SizedBox(height: 20),
+
+                  Text(
+                    'Клиенты',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  ...(_data['clients'] as List).map((c) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            c['client'] ?? 'Без клиента',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          Text(
+                            'Выручка: ${c['revenue']} ₸',
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+
+                          Text(
+                            'Прибыль: ${c['profit']} ₸',
+                            style: const TextStyle(color: Colors.greenAccent),
+                          ),
+
+                          Text(
+                            'Продаж: ${c['count']}',
+                            style: const TextStyle(color: Colors.white54),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+
+
                 AppUi.sectionCard(
                   title: 'Логика распределения',
                   icon: Icons.rule_outlined,
                   accent: const Color(0xFFF59E0B),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                    children: _selectedModel == 'capital_work'
+                        ? [
+                      _bullet(
+                        'Капитал + работа — прибыль распределяется по итоговой доле из весов капитала и работы.',
+                        accent: const Color(0xFFF59E0B),
+                      ),
+                      _bullet(
+                        'Расходы делятся 50/50 и вычитаются отдельно.',
+                        accent: const Color(0xFFF59E0B),
+                      ),
+                    ]
+                        : [
                       _bullet(
                         'Ariston — прибыль делится 50/50',
                         accent: const Color(0xFFF59E0B),
@@ -673,7 +970,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 AppUi.sectionCard(
                   title: 'Распределение прибыли',
                   icon: Icons.pie_chart_outline,
@@ -709,7 +1008,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 AppUi.sectionCard(
                   title: 'Топ-5 товаров по прибыли',
                   icon: Icons.workspace_premium_outlined,
@@ -720,12 +1021,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     children: List.generate(
                       topProducts.length,
                           (index) {
-                        final item = Map<String, dynamic>.from(
-                          topProducts[index],
+                        final item =
+                        Map<String, dynamic>.from(
+                          topProducts[index] as Map,
                         );
+
                         return AppUi.rankingRow(
                           index: index + 1,
-                          title: (item['name'] ?? 'Без названия')
+                          title: (item['name'] ??
+                              'Без названия')
                               .toString(),
                           value: _formatMoney(item['profit']),
                         );
@@ -733,7 +1037,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     ),
                   ),
                 ),
+
                 const SizedBox(height: 16),
+
                 AppUi.sectionCard(
                   title: 'Прибыль по дням',
                   icon: Icons.calendar_month_outlined,
@@ -744,9 +1050,11 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     children: List.generate(
                       dailyProfit.length,
                           (index) {
-                        final item = Map<String, dynamic>.from(
-                          dailyProfit[index],
+                        final item =
+                        Map<String, dynamic>.from(
+                          dailyProfit[index] as Map,
                         );
+
                         return AppUi.dayProfitRow(
                           date: (item['date'] ?? '').toString(),
                           value: _formatMoney(item['profit']),
