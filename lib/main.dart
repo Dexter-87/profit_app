@@ -8,6 +8,7 @@ import 'package:my_app/pages/create_order_page.dart';
 import 'package:my_app/pages/summary_page.dart';
 import 'package:my_app/pages/plan_page.dart';
 import 'package:my_app/pages/expenses_page.dart';
+import 'package:my_app/pages/stock_page.dart';
 
 void main() {
   runApp(const TechnoOptApp());
@@ -54,6 +55,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       const SummaryPage(),
       const PlanPage(),
       const ExpensesPage(),
+      const StockPage(),
     ];
 
     return Scaffold(
@@ -65,6 +67,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         backgroundColor: AppColors.card,
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.white54,
+        selectedFontSize: 10,
+        unselectedFontSize: 10,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
@@ -84,7 +88,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
-            label: 'Модель работы',
+            label: 'Модель',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.flag),
@@ -93,6 +97,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.receipt_long),
             label: 'Расходы',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.inventory_2_outlined),
+            label: 'Остатки',
           ),
         ],
       ),

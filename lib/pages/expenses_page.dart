@@ -1,3 +1,5 @@
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import 'package:my_app/services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
@@ -12,11 +14,23 @@ class ExpensesPage extends StatefulWidget {
 }
 
 class _ExpensesPageState extends State<ExpensesPage> {
+  static const String baseUrl = 'http://localhost:8080';
+
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
 
   String _selectedType = 'Стас';
   bool _isSaving = false;
+
+  String _selectedPeriod = '30 дней';
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyPresetPeriod('30 дней', load: false);
+  }
 
   @override
   void dispose() {
@@ -34,6 +48,76 @@ class _ExpensesPageState extends State<ExpensesPage> {
           .trim(),
     ) ??
         0;
+  }
+
+  String _formatApiDate(DateTime? date) {
+    if (date == null) return '';
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatDisplayDate(DateTime? date) {
+    if (date == null) return 'Не выбрано';
+
+    return '${date.day.toString().padLeft(2, '0')}.'
+        '${date.month.toString().padLeft(2, '0')}.'
+        '${date.year}';
+  }
+
+  void _applyPresetPeriod(String period, {bool load = true}) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    setState(() {
+      _selectedPeriod = period;
+
+      if (period == 'Сегодня') {
+        _dateFrom = today;
+        _dateTo = today;
+      } else if (period == '7 дней') {
+        _dateFrom = today.subtract(const Duration(days: 6));
+        _dateTo = today;
+      } else if (period == '30 дней') {
+        _dateFrom = today.subtract(const Duration(days: 29));
+        _dateTo = today;
+      } else {
+        _dateFrom = null;
+        _dateTo = null;
+      }
+    });
+  }
+
+  Future<void> _pickDate({required bool isFrom}) async {
+    final now = DateTime.now();
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: isFrom ? (_dateFrom ?? now) : (_dateTo ?? now),
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedPeriod = 'Свои даты';
+
+        if (isFrom) {
+          _dateFrom = picked;
+        } else {
+          _dateTo = picked;
+        }
+      });
+    }
+  }
+
+  void _downloadPdfReport() {
+    final from = _formatApiDate(_dateFrom);
+    final to = _formatApiDate(_dateTo);
+
+    final url = '$baseUrl/expenses-report/pdf?dateFrom=$from&dateTo=$to';
+
+    html.window.open(url, '_blank');
   }
 
   Future<void> _saveExpense() async {
@@ -169,6 +253,75 @@ class _ExpensesPageState extends State<ExpensesPage> {
     }
   }
 
+  Widget _periodBlock() {
+    return Container(
+      decoration: AppUi.cardDecoration(radius: 22),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  AppUi.periodButton(
+                    title: 'Сегодня',
+                    selected: _selectedPeriod == 'Сегодня',
+                    onTap: () => _applyPresetPeriod('Сегодня'),
+                  ),
+                  const SizedBox(width: 8),
+                  AppUi.periodButton(
+                    title: '7 дней',
+                    selected: _selectedPeriod == '7 дней',
+                    onTap: () => _applyPresetPeriod('7 дней'),
+                  ),
+                  const SizedBox(width: 8),
+                  AppUi.periodButton(
+                    title: '30 дней',
+                    selected: _selectedPeriod == '30 дней',
+                    onTap: () => _applyPresetPeriod('30 дней'),
+                  ),
+                  const SizedBox(width: 8),
+                  AppUi.periodButton(
+                    title: 'Всё',
+                    selected: _selectedPeriod == 'Всё',
+                    onTap: () => _applyPresetPeriod('Всё'),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => _pickDate(isFrom: true),
+                    child: AppUi.dateBox(
+                      title: 'С',
+                      value: _formatDisplayDate(_dateFrom),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => _pickDate(isFrom: false),
+                    child: AppUi.dateBox(
+                      title: 'По',
+                      value: _formatDisplayDate(_dateTo),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -212,10 +365,30 @@ class _ExpensesPageState extends State<ExpensesPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Выбери тип расхода и добавь сумму.',
+                        'Выбери тип расхода, добавь сумму и сформируй PDF-отчёт за период.',
                         style: TextStyle(color: AppColors.textSecondary),
                       ),
                     ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                AppUi.sectionCard(
+                  title: 'Период отчёта',
+                  icon: Icons.calendar_month_outlined,
+                  accent: const Color(0xFF06B6D4),
+                  child: _periodBlock(),
+                ),
+
+                const SizedBox(height: 16),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: GradientButton(
+                    text: 'PDF ОТЧЁТ ПО РАСХОДАМ',
+                    icon: Icons.picture_as_pdf_outlined,
+                    onTap: _downloadPdfReport,
                   ),
                 ),
 

@@ -363,12 +363,13 @@ class _SalesPageState extends State<SalesPage> {
         '')
         .toString()
         .trim();
+
     final displayProduct = product.isEmpty ? 'Без названия' : product;
-    final brand = (row['Бренд'] ?? '').toString();
-    final client = (row['Клиент'] ?? '').toString();
-    final date = (row['Дата'] ?? '').toString();
+    final client = (row['Клиент'] ?? '').toString().trim();
+    final date = (row['Дата'] ?? '').toString().trim();
     final channel = _detectChannel(row);
-    final order = (row['Номер заказа'] ?? '').toString();
+    final order = (row['Номер заказа'] ?? '').toString().trim();
+
     final rrc = _toDouble(row['РРЦ']);
     final cost = _toDouble(row['Себестоимость']);
     final commission = _toDouble(row['Комиссия Kaspi']);
@@ -385,21 +386,58 @@ class _SalesPageState extends State<SalesPage> {
         ? const Color(0xFF4DA3FF)
         : const Color(0xFF22C55E);
 
+    Widget compactValue(String title, double value, {Color? color}) {
+      return Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.stroke.withOpacity(0.7)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${_formatMoney(value)} ₸',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color ?? AppColors.textMain,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: AppUi.cardDecoration(
-        radius: 24,
-        borderColor: accent.withOpacity(0.22),
+        radius: 18,
+        borderColor: accent.withOpacity(0.20),
         shadows: [
           BoxShadow(
-            color: accent.withOpacity(0.10),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
+            color: accent.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -410,91 +448,92 @@ class _SalesPageState extends State<SalesPage> {
                       ? Icons.shopping_bag_outlined
                       : Icons.local_shipping_outlined,
                   accent: accent,
-                  size: 42,
+                  size: 34,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        displayProduct,
-                        style: const TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      if (brand.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          brand,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                      if (client.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Клиент: $client',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ],
+                  child: Text(
+                    displayProduct,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      height: 1.15,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 isDeleting
                     ? const SizedBox(
-                  width: 26,
-                  height: 26,
+                  width: 22,
+                  height: 22,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: AppColors.danger,
                   ),
                 )
                     : IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   onPressed: () => _deleteSale(row),
                   icon: const Icon(
                     Icons.delete_outline_rounded,
                     color: AppColors.danger,
+                    size: 21,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+
+            const SizedBox(height: 8),
+
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 AppUi.chip(date.isEmpty ? 'Без даты' : date, accent: accent),
                 AppUi.chip(channel, accent: accent),
-                if (order.isNotEmpty) AppUi.chip('Заказ: $order', accent: accent),
+                if (client.isNotEmpty) AppUi.chip(client, accent: accent),
+                if (order.isNotEmpty) AppUi.chip('№ $order', accent: accent),
               ],
             ),
-            const SizedBox(height: 14),
-            AppUi.infoRow('РРЦ', '${_formatMoney(rrc)} ₸'),
-            AppUi.infoRow('Себестоимость', '${_formatMoney(cost)} ₸'),
-            AppUi.infoRow('Комиссия', '${_formatMoney(commission)} ₸'),
-            const Divider(color: AppColors.stroke, height: 22),
-            AppUi.infoRow(
-              'Прибыль',
-              '${_formatMoney(profit)} ₸',
-              valueColor: profit >= 0 ? AppColors.success : AppColors.danger,
-              bold: true,
+
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                compactValue('РРЦ', rrc),
+                const SizedBox(width: 6),
+                compactValue('Себ', cost),
+                const SizedBox(width: 6),
+                compactValue(
+                  'Приб',
+                  profit,
+                  color: profit >= 0 ? AppColors.success : AppColors.danger,
+                ),
+              ],
             ),
+
+            if (commission > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  compactValue('Комиссия', commission),
+                ],
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {

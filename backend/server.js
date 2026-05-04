@@ -579,6 +579,57 @@ app.post('/expenses', async (req, res) => {
   }
 });
 
+// ================= ОСТАТКИ =================
+
+const STOCK_RANGE = 'Остатки!A:B';
+
+app.get('/stock', async (req, res) => {
+  try {
+    const rows = await getRows(STOCK_RANGE);
+    res.json(rows);
+  } catch (error) {
+    console.error('Ошибка /stock:', error);
+    res.status(500).json({
+      error: 'Ошибка загрузки остатков',
+      details: error.message,
+    });
+  }
+});
+
+app.post('/add-stock', async (req, res) => {
+  try {
+    const { name, quantity } = req.body;
+
+    if (!name || !quantity) {
+      return res.status(400).json({
+        error: 'Не указаны наименование или количество',
+      });
+    }
+
+    const sheetsApi = await getSheetsApi();
+
+    await sheetsApi.spreadsheets.values.append({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      range: STOCK_RANGE,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: {
+        values: [[name, quantity]],
+      },
+    });
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Ошибка /add-stock:', error);
+    res.status(500).json({
+      error: 'Ошибка добавления остатка',
+      details: error.message,
+    });
+  }
+});
+
+
+
 // ================= ПЛАН =================
 
 app.get('/plan', async (req, res) => {
@@ -1102,6 +1153,657 @@ app.post('/invoice-pdf', (req, res) => {
     });
   }
 });
+
+// ================= PDF ОТЧЁТ ПО РАСХОДАМ =================
+
+app.get('/expenses-report/pdf', async (req, res) => {
+  try {
+    const dateFrom = req.query.dateFrom;
+    const dateTo = req.query.dateTo;
+
+    const from = dateFrom ? parseDate(dateFrom) : null;
+    const to = dateTo ? parseDate(dateTo) : null;
+
+    const rows = await getRows(EXPENSES_RANGE);
+
+    const filtered = rows.filter((row) => {
+      const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
+      return rowInPeriod(rawDate, from, to);
+    });
+
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+    const fontPath = 'C:/Windows/Fonts/arial.ttf';
+    if (fs.existsSync(fontPath)) {
+      doc.font(fontPath);
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=expenses-report.pdf'
+    );
+
+
+    doc.pipe(res);
+
+    // ===== ШАПКА =====
+    doc.fontSize(22).text('TechnoOpt', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(18).text('Отчёт по расходам', { align: 'center' });
+
+    doc.moveDown();
+
+    doc.fontSize(11).text(`Период: ${dateFrom || '—'} - ${dateTo || '—'}`);
+
+    doc.moveDown();
+
+    // ===== ТАБЛИЦА =====
+    let y = doc.y;
+
+    doc.fontSize(10);
+    doc.text('Дата', 40, y);
+    doc.text('Тип', 110, y);
+    doc.text('Комментарий', 200, y);
+    doc.text('Сумма', 460, y);
+
+    y += 18;
+    doc.moveTo(40, y).lineTo(555, y).stroke();
+    y += 10;
+
+    let total = 0;
+    let stas = 0;
+    let alex = 0;
+    let common = 0;
+
+    filtered.forEach((row) => {
+      const rawDate = getCell(row, ['Дата'], 0);
+      const type = String(getCell(row, ['Тип', 'type'], 1)).trim();
+      const amount = toNumber(getCell(row, ['Сумма'], 2));
+      const comment = String(getCell(row, ['Комментарий'], 9)).trim();
+
+      total += amount;
+
+      if (type.includes('Стас')) stas += amount;
+      else if (type.includes('Алексей')) alex += amount;
+      else common += amount;
+
+      if (y > 740) {
+        doc.addPage();
+        y = 40;
+      }
+
+      doc.text(String(rawDate), 40, y);
+      doc.text(type, 110, y);
+      doc.text(comment || '-', 200, y, { width: 240 });
+      doc.text(money(amount), 460, y);
+
+      y += 25;
+    });
+
+    doc.moveTo(40, y).lineTo(555, y).stroke();
+    y += 15;
+
+    // ===== ИТОГИ =====
+    doc.fontSize(14).text(`ИТОГО: ${money(total)}`, 400, y, {
+      align: 'right',
+    });
+
+    doc.moveDown(2);
+
+    doc.fontSize(12).text(`Стас: ${money(stas)}`);
+    doc.text(`Алексей: ${money(alex)}`);
+    doc.text(`Общие: ${money(common)}`);
+
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /expenses-report/pdf:', error);
+    res.status(500).json({
+      error: 'Ошибка PDF отчёта расходов',
+      details: error.message,
+    });
+  }
+});
+
+// ================= PDF ОТЧЁТЫ АНАЛИТИКИ =================
+
+async function buildAnalyticsReportData(req) {
+  const dateFrom = req.query.dateFrom || req.query.date_from || req.query.datefrom;
+  const dateTo = req.query.dateTo || req.query.date_to || req.query.dateto;
+
+  const selectedModel = String(
+    req.query.model || req.query.workModel || req.query.selectedModel || 'current'
+  ).trim();
+
+  const from = dateFrom ? parseDate(dateFrom) : null;
+  const to = dateTo ? parseDate(dateTo) : null;
+
+  const salesRows = await getRowsFromSpreadsheet(
+    SALES_SPREADSHEET_ID,
+    SALES_RANGE
+  );
+
+  const expenseRows = await getRows(EXPENSES_RANGE);
+  const distributionRows = await getRows(DISTRIBUTION_RANGE);
+
+  const capitalWorkShares = getCapitalWorkShares(distributionRows);
+
+  let revenue = 0;
+  let totalProfit = 0;
+  let myProfit = 0;
+  let alexProfit = 0;
+
+  let kaspiRevenue = 0;
+  let kaspiProfit = 0;
+  let kaspiCount = 0;
+
+  let optRevenue = 0;
+  let optProfit = 0;
+  let optCount = 0;
+
+  let salesCount = 0;
+
+  const topMap = {};
+  const brandMap = {};
+  const clientMap = {};
+
+  for (const row of salesRows) {
+    if ((from || to) && !rowInPeriod(getRowDate(row), from, to)) continue;
+
+    const name = String(getCell(row, ['Наименование', 'Товар', 'name'], 2)).trim();
+    const channel = getChannel(row);
+    const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
+    const client = String(getCell(row, ['Клиент', 'client'], 13)).trim() || 'Без клиента';
+
+    const rrc = toNumber(getCell(row, ['РРЦ', 'Выручка', 'Цена', 'price'], 5));
+    const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
+    const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
+
+    const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7));
+    const profit = profitFromSheet !== 0 ? profitFromSheet : rrc - cost - commission;
+
+    let shares;
+
+    if (selectedModel === 'capital_work') {
+      shares = {
+        stasShare: capitalWorkShares.stasShare,
+        alexShare: capitalWorkShares.alexShare,
+      };
+    } else {
+      shares = getCurrentModelShares(row, name, comment);
+    }
+
+    const rowMyProfit = profit * shares.stasShare;
+    const rowAlexProfit = profit * shares.alexShare;
+
+    revenue += rrc;
+    totalProfit += profit;
+    myProfit += rowMyProfit;
+    alexProfit += rowAlexProfit;
+    salesCount++;
+
+    if (channel === 'Каспий') {
+      kaspiRevenue += rrc;
+      kaspiProfit += profit;
+      kaspiCount++;
+    } else {
+      optRevenue += rrc;
+      optProfit += profit;
+      optCount++;
+    }
+
+    if (name) {
+      topMap[name] = (topMap[name] || 0) + profit;
+    }
+
+    const brand = detectBrand(name);
+
+    if (!brandMap[brand]) {
+      brandMap[brand] = {
+        brand,
+        revenue: 0,
+        profit: 0,
+        myProfit: 0,
+        alexProfit: 0,
+        count: 0,
+      };
+    }
+
+    brandMap[brand].revenue += rrc;
+    brandMap[brand].profit += profit;
+    brandMap[brand].myProfit += rowMyProfit;
+    brandMap[brand].alexProfit += rowAlexProfit;
+    brandMap[brand].count++;
+
+    if (!clientMap[client]) {
+      clientMap[client] = {
+        client,
+        revenue: 0,
+        profit: 0,
+        myProfit: 0,
+        alexProfit: 0,
+        count: 0,
+      };
+    }
+
+    clientMap[client].revenue += rrc;
+    clientMap[client].profit += profit;
+    clientMap[client].myProfit += rowMyProfit;
+    clientMap[client].alexProfit += rowAlexProfit;
+    clientMap[client].count++;
+  }
+
+  let expenses = 0;
+
+  for (const row of expenseRows) {
+    const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
+    if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
+
+    expenses += toNumber(getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2));
+  }
+
+  const netProfit = totalProfit - expenses;
+
+  let myNet = 0;
+  let alexNet = 0;
+
+  if (selectedModel === 'capital_work') {
+    myProfit = netProfit * capitalWorkShares.stasShare;
+    alexProfit = netProfit * capitalWorkShares.alexShare;
+
+    myNet = myProfit;
+    alexNet = alexProfit;
+  } else {
+    myNet = myProfit - expenses / 2;
+    alexNet = alexProfit - expenses / 2;
+  }
+
+  const avgCheck = salesCount > 0 ? revenue / salesCount : 0;
+  const avgProfit = salesCount > 0 ? totalProfit / salesCount : 0;
+  const margin = revenue > 0 ? (totalProfit / revenue) * 100 : 0;
+
+  const topProducts = Object.entries(topMap)
+    .map(([name, profit]) => ({ name, profit }))
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 10);
+
+  const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
+  const clients = Object.values(clientMap).sort((a, b) => b.profit - a.profit);
+
+  return {
+    dateFrom,
+    dateTo,
+    selectedModel,
+    revenue,
+    totalProfit,
+    expenses,
+    netProfit,
+    myProfit,
+    alexProfit,
+    myNet,
+    alexNet,
+    salesCount,
+    avgCheck,
+    avgProfit,
+    margin,
+    kaspiRevenue,
+    kaspiProfit,
+    kaspiCount,
+    optRevenue,
+    optProfit,
+    optCount,
+    topProducts,
+    brands,
+    clients,
+  };
+}
+
+function setupPdf(res, filename) {
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+  const fontPath = 'C:/Windows/Fonts/arial.ttf';
+  if (fs.existsSync(fontPath)) {
+    doc.font(fontPath);
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+  doc.pipe(res);
+  return doc;
+}
+
+function pdfHeader(doc, title, data) {
+  doc.fontSize(22).text('TechnoOpt', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(18).text(title, { align: 'center' });
+  doc.moveDown();
+
+  doc.fontSize(11).text(`Период: ${data.dateFrom || '—'} - ${data.dateTo || '—'}`);
+  doc.text(
+    `Модель: ${
+      data.selectedModel === 'capital_work'
+        ? 'Капитал + работа'
+        : 'Текущая'
+    }`
+  );
+  doc.moveDown();
+}
+
+function checkPage(doc, y) {
+  if (y > 740) {
+    doc.addPage();
+    return 40;
+  }
+
+  return y;
+}
+
+// ===== ОБЩИЙ ОТЧЁТ БИЗНЕСА =====
+
+app.get('/business-report/pdf', async (req, res) => {
+  try {
+    const data = await buildAnalyticsReportData(req);
+    const doc = setupPdf(res, 'business-report.pdf');
+
+    pdfHeader(doc, 'Общий отчёт бизнеса', data);
+
+    doc.fontSize(13).text('Основные показатели');
+    doc.moveDown(0.5);
+
+    doc.fontSize(11);
+    doc.text(`Выручка: ${money(data.revenue)}`);
+    doc.text(`Валовая прибыль: ${money(data.totalProfit)}`);
+    doc.text(`Расходы: ${money(data.expenses)}`);
+    doc.text(`Чистая прибыль: ${money(data.netProfit)}`);
+    doc.text(`Стас: ${money(data.myNet)}`);
+    doc.text(`Алексей: ${money(data.alexNet)}`);
+    doc.text(`Продаж: ${data.salesCount}`);
+    doc.text(`Средний чек: ${money(data.avgCheck)}`);
+    doc.text(`Средняя прибыль: ${money(data.avgProfit)}`);
+    doc.text(`Маржинальность: ${data.margin.toFixed(1)}%`);
+
+    doc.moveDown();
+
+    doc.fontSize(13).text('Каналы');
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+    doc.text(`Каспий: ${money(data.kaspiRevenue)} / прибыль ${money(data.kaspiProfit)} / продаж ${data.kaspiCount}`);
+    doc.text(`ОПТ: ${money(data.optRevenue)} / прибыль ${money(data.optProfit)} / продаж ${data.optCount}`);
+
+    doc.moveDown();
+
+    doc.fontSize(13).text('Топ товаров по прибыли');
+    doc.moveDown(0.5);
+
+    let y = doc.y;
+
+    data.topProducts.forEach((item, index) => {
+      y = checkPage(doc, y);
+      doc.text(`${index + 1}. ${item.name}`, 40, y, { width: 360 });
+      doc.text(money(item.profit), 430, y);
+      y += 24;
+    });
+
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /business-report/pdf:', error);
+    res.status(500).json({
+      error: 'Ошибка PDF бизнес-отчёта',
+      details: error.message,
+    });
+  }
+});
+
+// ===== ОТЧЁТ ПО КЛИЕНТАМ =====
+
+app.get('/clients-report/pdf', async (req, res) => {
+  try {
+    const data = await buildAnalyticsReportData(req);
+    const doc = setupPdf(res, 'clients-report.pdf');
+
+    pdfHeader(doc, 'Отчёт по клиентам', data);
+
+    let y = doc.y;
+
+    doc.fontSize(10);
+    doc.text('№', 40, y);
+    doc.text('Клиент', 65, y);
+    doc.text('Выручка', 270, y);
+    doc.text('Прибыль', 370, y);
+    doc.text('Продаж', 475, y);
+
+    y += 18;
+    doc.moveTo(40, y).lineTo(555, y).stroke();
+    y += 10;
+
+    data.clients.forEach((item, index) => {
+      y = checkPage(doc, y);
+
+      doc.fontSize(10);
+      doc.text(String(index + 1), 40, y);
+      doc.text(String(item.client || 'Без клиента'), 65, y, { width: 190 });
+      doc.text(money(item.revenue), 270, y);
+      doc.text(money(item.profit), 370, y);
+      doc.text(String(item.count), 485, y);
+
+      y += 28;
+    });
+
+    y += 10;
+    doc.moveTo(40, y).lineTo(555, y).stroke();
+    y += 18;
+
+    doc.fontSize(13).text(`ИТОГО выручка: ${money(data.revenue)}`);
+    doc.text(`ИТОГО прибыль: ${money(data.totalProfit)}`);
+
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /clients-report/pdf:', error);
+    res.status(500).json({
+      error: 'Ошибка PDF отчёта по клиентам',
+      details: error.message,
+    });
+  }
+});
+
+// ===== ОТЧЁТ ПО БРЕНДАМ =====
+
+app.get('/brands-report/pdf', async (req, res) => {
+  try {
+    const data = await buildAnalyticsReportData(req);
+    const doc = setupPdf(res, 'brands-report.pdf');
+
+    pdfHeader(doc, 'Отчёт по брендам', data);
+
+    let y = doc.y;
+
+    doc.fontSize(10);
+    doc.text('№', 40, y);
+    doc.text('Бренд', 65, y);
+    doc.text('Выручка', 170, y);
+    doc.text('Прибыль', 270, y);
+    doc.text('Стас', 370, y);
+    doc.text('Алексей', 455, y);
+
+    y += 18;
+    doc.moveTo(40, y).lineTo(555, y).stroke();
+    y += 10;
+
+    data.brands.forEach((item, index) => {
+      y = checkPage(doc, y);
+
+      doc.fontSize(10);
+      doc.text(String(index + 1), 40, y);
+      doc.text(String(item.brand || 'Другое'), 65, y, { width: 95 });
+      doc.text(money(item.revenue), 170, y);
+      doc.text(money(item.profit), 270, y);
+      doc.text(money(item.myProfit), 370, y);
+      doc.text(money(item.alexProfit), 455, y);
+
+      y += 28;
+    });
+
+    y += 10;
+    doc.moveTo(40, y).lineTo(555, y).stroke();
+    y += 18;
+
+    doc.fontSize(13).text(`ИТОГО выручка: ${money(data.revenue)}`);
+    doc.text(`ИТОГО прибыль: ${money(data.totalProfit)}`);
+
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /brands-report/pdf:', error);
+    res.status(500).json({
+      error: 'Ошибка PDF отчёта по брендам',
+      details: error.message,
+    });
+  }
+});
+
+// ================= PDF ОТЧЁТ ПО ОСТАТКАМ =================
+
+app.get('/stock-report/pdf', async (req, res) => {
+  try {
+    const stockRows = await getRows(STOCK_RANGE);
+
+    const teegRows = await getRowsFromSpreadsheet(
+      TEEG_PRICE_SPREADSHEET_ID,
+      TEEG_PRICE_RANGE
+    );
+
+    const aristonRows = await getRowsFromSpreadsheet(
+      ARISTON_PRICE_SPREADSHEET_ID,
+      ARISTON_PRICE_RANGE
+    );
+
+    const prices = [
+      ...normalizePriceRows(teegRows, 'TEEG'),
+      ...normalizePriceRows(aristonRows, 'Ariston'),
+    ];
+
+    function findPrice(name) {
+      const n = String(name || '').toLowerCase().trim();
+
+      return prices.find((p) => {
+        const model = String(p.model || '').toLowerCase().trim();
+        const fullName = String(p.fullName || '').toLowerCase().trim();
+        return model === n || fullName === n;
+      }) || prices.find((p) => {
+        const model = String(p.model || '').toLowerCase().trim();
+        const fullName = String(p.fullName || '').toLowerCase().trim();
+        return model.includes(n) || fullName.includes(n) || n.includes(model);
+      });
+    }
+
+    const doc = new PDFDocument({ margin: 32, size: 'A4' });
+
+    const fontPath = 'C:/Windows/Fonts/arial.ttf';
+    if (fs.existsSync(fontPath)) {
+      doc.font(fontPath);
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=stock-report.pdf'
+    );
+
+    doc.pipe(res);
+
+    doc.fontSize(21).text('TechnoOpt', { align: 'center' });
+    doc.moveDown(0.2);
+    doc.fontSize(16).text('Отчёт по остаткам', { align: 'center' });
+
+    doc.moveDown();
+    doc.fontSize(10).text(`Дата отчёта: ${todayRu()}`);
+    doc.moveDown(0.6);
+
+    let totalQty = 0;
+    let totalCost = 0;
+
+    let y = doc.y;
+
+    function drawHeader() {
+      doc.fontSize(9);
+      doc.text('№', 32, y);
+      doc.text('Наименование', 55, y);
+      doc.text('Кол-во', 350, y);
+      doc.text('Себ.', 405, y);
+      doc.text('Итого', 485, y);
+
+      y += 15;
+      doc.moveTo(32, y).lineTo(563, y).stroke();
+      y += 8;
+    }
+
+    drawHeader();
+
+    stockRows.forEach((row, index) => {
+      const name = String(
+        getCell(row, ['Наименование', 'name', 'Модель', 'model'], 0)
+      ).trim();
+
+      const qty = toNumber(
+        getCell(row, ['Количество', 'quantity', 'qty'], 1)
+      );
+
+      const price = findPrice(name);
+      const cost = price ? toNumber(price.cost) : 0;
+      const total = qty * cost;
+
+      totalQty += qty;
+      totalCost += total;
+
+      if (y > 742) {
+        doc.addPage();
+        y = 32;
+        drawHeader();
+      }
+
+      const nameHeight = doc.heightOfString(name || 'Без названия', {
+        width: 285,
+      });
+
+      const rowHeight = Math.max(22, nameHeight + 6);
+
+      doc.fontSize(8.5);
+      doc.text(String(index + 1), 32, y);
+      doc.text(name || 'Без названия', 55, y, { width: 285 });
+      doc.text(String(qty), 355, y);
+      doc.text(money(cost), 405, y, { width: 70 });
+      doc.text(money(total), 485, y, { width: 75 });
+
+      y += rowHeight;
+    });
+
+    y += 6;
+    doc.moveTo(32, y).lineTo(563, y).stroke();
+    y += 16;
+
+    if (y > 700) {
+      doc.addPage();
+      y = 32;
+    }
+
+    doc.fontSize(12);
+    doc.text(`Всего позиций: ${stockRows.length}`, 32, y);
+    y += 18;
+    doc.text(`Всего штук: ${totalQty}`, 32, y);
+    y += 18;
+    doc.fontSize(14).text(`Сумма склада: ${money(totalCost)}`, 32, y);
+
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /stock-report/pdf:', error);
+    res.status(500).json({
+      error: 'Ошибка PDF отчёта по остаткам',
+      details: error.message,
+    });
+  }
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);

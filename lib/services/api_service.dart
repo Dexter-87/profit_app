@@ -6,22 +6,45 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchSales() async {
     final response = await http.get(Uri.parse('$baseUrl/sales'));
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки продаж');
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchPrices() async {
+    final response = await http.get(Uri.parse('$baseUrl/prices'));
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки прайсов');
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchStock() async {
+    final response = await http.get(Uri.parse('$baseUrl/stock'));
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки остатков');
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  static Future<void> addStock({
+    required String name,
+    required double quantity,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/add-stock'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'name': name,
+        'quantity': quantity,
+      }),
+    );
 
     if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки продаж');
+      throw Exception('Ошибка добавления остатка: ${response.body}');
     }
-
-    final data = jsonDecode(response.body);
-    return List<Map<String, dynamic>>.from(data);
   }
 
   static Future<void> deleteSale(int rowIndex) async {
     final response = await http.post(
       Uri.parse('$baseUrl/delete-sale'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'rowIndex': rowIndex,
-      }),
+      body: jsonEncode({'rowIndex': rowIndex}),
     );
 
     if (response.statusCode != 200) {
@@ -67,32 +90,15 @@ class ApiService {
   }) async {
     final query = <String, String>{};
 
-    if (dateFrom != null && dateFrom.isNotEmpty) {
-      query['dateFrom'] = dateFrom;
-    }
+    if (dateFrom != null && dateFrom.isNotEmpty) query['dateFrom'] = dateFrom;
+    if (dateTo != null && dateTo.isNotEmpty) query['dateTo'] = dateTo;
+    if (brand != null && brand.isNotEmpty && brand != 'Все') query['brand'] = brand;
+    if (model != null && model.isNotEmpty) query['model'] = model;
 
-    if (dateTo != null && dateTo.isNotEmpty) {
-      query['dateTo'] = dateTo;
-    }
-
-    if (brand != null && brand.isNotEmpty && brand != 'Все') {
-      query['brand'] = brand;
-    }
-
-    if (model != null && model.isNotEmpty) {
-      query['model'] = model;
-    }
-
-    final uri = Uri.parse('$baseUrl/analytics').replace(
-      queryParameters: query,
-    );
-
+    final uri = Uri.parse('$baseUrl/analytics').replace(queryParameters: query);
     final response = await http.get(uri);
 
-    if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки аналитики');
-    }
-
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки аналитики');
     return Map<String, dynamic>.from(jsonDecode(response.body));
   }
 
@@ -120,40 +126,23 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchPlan() async {
     final response = await http.get(Uri.parse('$baseUrl/plan'));
-
-    if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки плана');
-    }
-
-    final data = jsonDecode(response.body);
-    return List<Map<String, dynamic>>.from(data);
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки плана');
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
   }
 
   static Future<List<Map<String, dynamic>>> fetchInvestments() async {
     final response = await http.get(Uri.parse('$baseUrl/investments'));
-
-    if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки вложений');
-    }
-
-    final data = jsonDecode(response.body);
-    return List<Map<String, dynamic>>.from(data);
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки вложений');
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
   }
 
   static Future<List<Map<String, dynamic>>> fetchDistribution() async {
     final response = await http.get(Uri.parse('$baseUrl/distribution'));
-
-    if (response.statusCode != 200) {
-      throw Exception('Ошибка загрузки распределения');
-    }
-
-    final data = jsonDecode(response.body);
-    return List<Map<String, dynamic>>.from(data);
+    if (response.statusCode != 200) throw Exception('Ошибка загрузки распределения');
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
   }
 
-  static Future<void> saveDistribution(
-      List<Map<String, dynamic>> rows,
-      ) async {
+  static Future<void> saveDistribution(List<Map<String, dynamic>> rows) async {
     final response = await http.post(
       Uri.parse('$baseUrl/distribution'),
       headers: {'Content-Type': 'application/json'},

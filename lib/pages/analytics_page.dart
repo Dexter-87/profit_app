@@ -1,3 +1,5 @@
+import 'dart:html' as html;
+
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
@@ -173,6 +175,61 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   List<dynamic> _safeList(dynamic value) {
     if (value is List) return value;
     return [];
+  }
+
+  void _openPdfReport(String endpoint) {
+    final from = _formatApiDate(_dateFrom);
+    final to = _formatApiDate(_dateTo);
+
+    final url =
+        'http://localhost:8080/$endpoint/pdf?dateFrom=$from&dateTo=$to&model=$_selectedModel';
+
+    html.window.open(url, '_blank');
+  }
+
+  Widget _pdfButton({
+    required String title,
+    required IconData icon,
+    required String endpoint,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => _openPdfReport(endpoint),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: AppUi.cardDecoration(
+          color: AppColors.bg,
+          radius: 18,
+          borderColor: AppColors.stroke.withOpacity(0.75),
+          shadows: const [],
+        ),
+        child: Row(
+          children: [
+            AppUi.iconBadge(
+              icon: icon,
+              accent: const Color(0xFF06B6D4),
+              size: 36,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.open_in_new,
+              color: AppColors.textSecondary,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _modelButton({
@@ -427,8 +484,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
     );
   }
-
-
   @override
   Widget build(BuildContext context) {
     final revenue = _toDouble(_data['revenue']);
@@ -563,33 +618,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
                 const SizedBox(height: 16),
 
-                AppUi.sectionCard(
-                  title: 'Топ клиентов',
-                  icon: Icons.people_alt_outlined,
-                  accent: const Color(0xFF4DA3FF),
-                  child: clients.isEmpty
-                      ? AppUi.emptyBlock('Нет данных по клиентам')
-                      : Column(
-                    children: List.generate(
-                      clients.length,
-                          (index) {
-                        final item = Map<String, dynamic>.from(
-                          clients[index] as Map,
-                        );
-
-                        return _clientRow(
-                          item,
-                          index + 1,
-                          totalProfit,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-
                 Container(
                   decoration: AppUi.cardDecoration(radius: 22),
                   child: Padding(
@@ -640,12 +668,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                               child: InkWell(
                                 borderRadius:
                                 BorderRadius.circular(18),
-                                onTap: () =>
-                                    _pickDate(isFrom: true),
+                                onTap: () => _pickDate(isFrom: true),
                                 child: AppUi.dateBox(
                                   title: 'С',
-                                  value:
-                                  _formatDisplayDate(_dateFrom),
+                                  value: _formatDisplayDate(_dateFrom),
                                 ),
                               ),
                             ),
@@ -654,8 +680,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                               child: InkWell(
                                 borderRadius:
                                 BorderRadius.circular(18),
-                                onTap: () =>
-                                    _pickDate(isFrom: false),
+                                onTap: () => _pickDate(isFrom: false),
                                 child: AppUi.dateBox(
                                   title: 'По',
                                   value: _formatDisplayDate(_dateTo),
@@ -666,6 +691,62 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                AppUi.sectionCard(
+                  title: 'Модель расчёта',
+                  icon: Icons.account_tree_outlined,
+                  accent: const Color(0xFF22C55E),
+                  child: Row(
+                    children: [
+                      _modelButton(
+                        title: 'Текущая',
+                        value: 'current',
+                      ),
+                      const SizedBox(width: 10),
+                      _modelButton(
+                        title: 'Капитал + работа',
+                        value: 'capital_work',
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                AppUi.sectionCard(
+                  title: 'PDF отчёты',
+                  icon: Icons.picture_as_pdf_outlined,
+                  accent: const Color(0xFF06B6D4),
+                  child: Column(
+                    children: [
+                      _pdfButton(
+                        title: 'Общий отчёт бизнеса',
+                        icon: Icons.analytics_outlined,
+                        endpoint: 'business-report',
+                      ),
+                      const SizedBox(height: 10),
+                      _pdfButton(
+                        title: 'Отчёт по клиентам',
+                        icon: Icons.people_alt_outlined,
+                        endpoint: 'clients-report',
+                      ),
+                      const SizedBox(height: 10),
+                      _pdfButton(
+                        title: 'Отчёт по брендам',
+                        icon: Icons.sell_outlined,
+                        endpoint: 'brands-report',
+                      ),
+                      const SizedBox(height: 10),
+                      _pdfButton(
+                        title: 'Отчёт по расходам',
+                        icon: Icons.receipt_long_outlined,
+                        endpoint: 'expenses-report',
+                      ),
+                    ],
                   ),
                 ),
 
@@ -853,6 +934,32 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 const SizedBox(height: 16),
 
                 AppUi.sectionCard(
+                  title: 'Топ клиентов',
+                  icon: Icons.people_alt_outlined,
+                  accent: const Color(0xFF4DA3FF),
+                  child: clients.isEmpty
+                      ? AppUi.emptyBlock('Нет данных по клиентам')
+                      : Column(
+                    children: List.generate(
+                      clients.length,
+                          (index) {
+                        final item = Map<String, dynamic>.from(
+                          clients[index] as Map,
+                        );
+
+                        return _clientRow(
+                          item,
+                          index + 1,
+                          totalProfit,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                AppUi.sectionCard(
                   title: 'Бренды',
                   icon: Icons.sell_outlined,
                   accent: const Color(0xFF06B6D4),
@@ -862,8 +969,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     children: List.generate(
                       brands.length,
                           (index) {
-                        final item =
-                        Map<String, dynamic>.from(
+                        final item = Map<String, dynamic>.from(
                           brands[index] as Map,
                         );
                         return _brandRow(item);
@@ -873,65 +979,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 ),
 
                 const SizedBox(height: 16),
-
-                // ===== КЛИЕНТЫ =====
-                if (_data['clients'] != null) ...[
-                  const SizedBox(height: 20),
-
-                  Text(
-                    'Клиенты',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  ...(_data['clients'] as List).map((c) {
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            c['client'] ?? 'Без клиента',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-
-                          const SizedBox(height: 6),
-
-                          Text(
-                            'Выручка: ${c['revenue']} ₸',
-                            style: const TextStyle(color: Colors.white70),
-                          ),
-
-                          Text(
-                            'Прибыль: ${c['profit']} ₸',
-                            style: const TextStyle(color: Colors.greenAccent),
-                          ),
-
-                          Text(
-                            'Продаж: ${c['count']}',
-                            style: const TextStyle(color: Colors.white54),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                ],
-
 
                 AppUi.sectionCard(
                   title: 'Логика распределения',
@@ -1021,15 +1068,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     children: List.generate(
                       topProducts.length,
                           (index) {
-                        final item =
-                        Map<String, dynamic>.from(
+                        final item = Map<String, dynamic>.from(
                           topProducts[index] as Map,
                         );
 
                         return AppUi.rankingRow(
                           index: index + 1,
-                          title: (item['name'] ??
-                              'Без названия')
+                          title: (item['name'] ?? 'Без названия')
                               .toString(),
                           value: _formatMoney(item['profit']),
                         );
@@ -1050,8 +1095,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     children: List.generate(
                       dailyProfit.length,
                           (index) {
-                        final item =
-                        Map<String, dynamic>.from(
+                        final item = Map<String, dynamic>.from(
                           dailyProfit[index] as Map,
                         );
 
