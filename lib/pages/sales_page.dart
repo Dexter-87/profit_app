@@ -145,10 +145,20 @@ class _SalesPageState extends State<SalesPage> {
   DateTime? _parseDate(dynamic raw) {
     if (raw == null) return null;
 
-    final value = raw.toString().trim();
+    var value = raw.toString().trim();
     if (value.isEmpty) return null;
 
+    value = value.replaceAll("'", '').trim();
+
     try {
+      // Google Sheets serial date: например 46146
+      final serial = double.tryParse(value.replaceAll(',', '.'));
+      if (serial != null && serial > 30000 && serial < 60000) {
+        final baseDate = DateTime(1899, 12, 30);
+        return baseDate.add(Duration(days: serial.floor()));
+      }
+
+      // dd.mm.yyyy
       if (value.contains('.')) {
         final parts = value.split('.');
         if (parts.length == 3) {
@@ -159,6 +169,13 @@ class _SalesPageState extends State<SalesPage> {
         }
       }
 
+      // yyyy-mm-dd
+      if (value.contains('-')) {
+        final parsed = DateTime.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+
+      // yyyy/mm/dd или mm/dd/yyyy
       if (value.contains('/')) {
         final parts = value.split('/');
         if (parts.length == 3) {
@@ -181,6 +198,7 @@ class _SalesPageState extends State<SalesPage> {
       return null;
     }
   }
+
 
   double _toDouble(dynamic value) {
     if (value == null) return 0;
@@ -337,7 +355,15 @@ class _SalesPageState extends State<SalesPage> {
 
   Widget _buildSaleCard(Map<String, dynamic> row) {
     final product =
-    (row['Наименование'] ?? row['Товар'] ?? 'Без названия').toString();
+    (row['Наименование'] ??
+        row['Товар'] ??
+        row['productName'] ??
+        row['product'] ??
+        row['name'] ??
+        '')
+        .toString()
+        .trim();
+    final displayProduct = product.isEmpty ? 'Без названия' : product;
     final brand = (row['Бренд'] ?? '').toString();
     final client = (row['Клиент'] ?? '').toString();
     final date = (row['Дата'] ?? '').toString();
@@ -392,7 +418,7 @@ class _SalesPageState extends State<SalesPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        product,
+                        displayProduct,
                         style: const TextStyle(
                           color: AppColors.textMain,
                           fontSize: 15,

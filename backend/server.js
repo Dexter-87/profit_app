@@ -4,7 +4,6 @@ const { google } = require('googleapis');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -18,7 +17,7 @@ const SALES_SPREADSHEET_ID = '1D26s-VjLPvg43z-Hk38fU7Y4tPFZ9h-UfFjJzQnvtB0';
 const TEEG_PRICE_SPREADSHEET_ID = '16WJB_55AWQiKOvyplY4eA1hQnJHGB4JzxF4640vMp8s';
 const ARISTON_PRICE_SPREADSHEET_ID = '11cAH2QbdH-FcK5oY0m59GFsr77V3HHzZ47jxC0WOKR0';
 
-const SALES_RANGE = 'Продажи!A:N';
+const SALES_RANGE = 'Лист1!A:N';
 const SALES_WRITE_RANGE = 'Лист1!A:N';
 
 const EXPENSES_RANGE = 'Expenses!A:Z';
@@ -55,7 +54,6 @@ function money(value) {
 
 function todayRu() {
   const now = new Date();
-
   return `${String(now.getDate()).padStart(2, '0')}.${String(
     now.getMonth() + 1
   ).padStart(2, '0')}.${now.getFullYear()}`;
@@ -65,8 +63,13 @@ function parseDate(raw) {
   if (!raw) return null;
   if (raw instanceof Date) return raw;
 
-  const value = String(raw).trim();
+  const value = String(raw).replace("'", '').trim();
   if (!value) return null;
+
+  const serial = Number(value);
+  if (!isNaN(serial) && serial > 30000 && serial < 60000) {
+    return new Date(Date.UTC(1899, 11, 30 + serial));
+  }
 
   if (value.includes('-')) {
     const [y, m, d] = value.split('-').map(Number);
@@ -107,11 +110,9 @@ function normalizeRows(values) {
     });
 
     item.__index = index + 2;
-
     return item;
   });
 }
-
 
 async function getSheetsApi() {
   const client = await auth.getClient();
@@ -157,17 +158,11 @@ function getRowDate(row) {
 }
 
 function getChannel(row) {
-  const channel = String(getCell(row, ['Канал', 'channel', 'Каспий'], 1)).trim();
-
+  const channel = String(getCell(row, ['Канал', 'channel'], 1)).trim();
   if (channel) return channel;
 
-  const orderNumber = String(
-    getCell(row, ['Номер заказа', 'orderNumber'], 3)
-  ).trim();
-
-  const commission = toNumber(
-    getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6)
-  );
+  const orderNumber = String(getCell(row, ['Номер заказа', 'orderNumber'], 3)).trim();
+  const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
 
   if (orderNumber || commission > 0) return 'Каспий';
   return 'ОПТ';
@@ -231,17 +226,9 @@ function getCurrentModelShares(row, name, comment) {
   return { stasShare: 0, alexShare: 1 };
 }
 
-function normalizeShare(value) {
-  const number = toNumber(value);
-  if (number > 1) return number / 100;
-  return number;
-}
-
 function getCapitalWorkShares(distributionRows) {
   const finalRow = distributionRows.find((row) => {
-    const metric = String(
-      getCell(row, ['metric', 'Метрика', 'Показатель'], 0)
-    )
+    const metric = String(getCell(row, ['metric', 'Метрика', 'Показатель'], 0))
       .trim()
       .toLowerCase();
 
@@ -249,13 +236,8 @@ function getCapitalWorkShares(distributionRows) {
   });
 
   if (finalRow) {
-    let stasFinalShare = toNumber(
-      getCell(finalRow, ['stas', 'Стас'], 1)
-    );
-
-    let alexFinalShare = toNumber(
-      getCell(finalRow, ['alexey', 'alex', 'Алексей'], 2)
-    );
+    let stasFinalShare = toNumber(getCell(finalRow, ['stas', 'Стас'], 1));
+    let alexFinalShare = toNumber(getCell(finalRow, ['alexey', 'alex', 'Алексей'], 2));
 
     if (stasFinalShare > 1) stasFinalShare = stasFinalShare / 100;
     if (alexFinalShare > 1) alexFinalShare = alexFinalShare / 100;
@@ -313,9 +295,7 @@ function normalizePriceRows(rows, source) {
     .map((row) => {
       const brand = String(getCell(row, ['Бренд', 'brand'], 0)).trim();
       const model = String(getCell(row, ['Модель', 'model'], 1)).trim();
-      const priceType = String(
-        getCell(row, ['ТипЦены', 'Тип цены', 'priceType'], 2)
-      ).trim();
+      const priceType = String(getCell(row, ['ТипЦены', 'Тип цены', 'priceType'], 2)).trim();
       const price = toNumber(getCell(row, ['Цена', 'price'], 3));
       const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
 
@@ -363,8 +343,27 @@ app.get('/prices', async (req, res) => {
 
 app.get('/sales', async (req, res) => {
   try {
-    const rows = await getRows(SALES_RANGE);
-    res.json(rows);
+    const rows = await getRowsFromSpreadsheet(
+      SALES_SPREADSHEET_ID,
+      SALES_RANGE
+    );
+
+    const sales = rows.map((row) => {
+      const product = String(
+        getCell(row, ['Наименование', 'Товар', 'Модель', 'Название'], 2)
+      ).trim();
+
+      return {
+        ...row,
+        Наименование: product,
+        Товар: product,
+        productName: product,
+        product,
+        name: product,
+      };
+    });
+
+    res.json(sales);
   } catch (error) {
     console.error('Ошибка /sales:', error);
     res.status(500).json({
@@ -377,6 +376,7 @@ app.get('/sales', async (req, res) => {
 app.post('/add-sale', async (req, res) => {
   try {
     const {
+      items,
       name,
       model,
       quantity,
@@ -389,58 +389,80 @@ app.post('/add-sale', async (req, res) => {
       orderNumber,
     } = req.body;
 
-    const productName = String(name || model || '').trim();
-    const qty = Math.max(1, parseInt(quantity || 1, 10));
-    const costNumber = toNumber(cost);
-    const priceNumber = toNumber(price);
     const saleChannel = String(channel || 'ОПТ').trim();
-
-    const commissionNumber = saleChannel === 'Каспий' ? toNumber(commission) : 0;
     const kaspiOrderNumber =
       saleChannel === 'Каспий' ? String(orderNumber || '').trim() : '';
 
-    let safeComment = String(comment || '').trim();
-    if (safeComment === '+') safeComment = "'+";
-
-    if (!productName) {
-      return res.status(400).json({ error: 'Нет товара' });
-    }
-
-    if (!priceNumber) {
-      return res.status(400).json({ error: 'Нет цены продажи' });
-    }
+    const sourceItems = Array.isArray(items) && items.length > 0
+      ? items
+      : [
+          {
+            name: name || model,
+            quantity,
+            cost,
+            price,
+            commission,
+            comment,
+          },
+        ];
 
     const date = todayRu();
-    const sheetsApi = await getSheetsApi();
     const values = [];
 
-    for (let i = 0; i < qty; i++) {
-      const profit = priceNumber - costNumber - commissionNumber;
+    for (const item of sourceItems) {
+      const productName = String(item.name || item.model || '').trim();
+      const qty = Math.max(1, parseInt(item.quantity || 1, 10));
+      const costNumber = toNumber(item.cost);
+      const priceNumber = toNumber(item.price);
+      const commissionNumber =
+        saleChannel === 'Каспий' ? toNumber(item.commission || commission) : 0;
 
-      values.push([
-        date,
-        saleChannel,
-        productName,
-        kaspiOrderNumber,
-        costNumber,
-        priceNumber,
-        commissionNumber,
-        profit,
-        safeComment,
-        '',   // J
-        '',   // K
-        '',   // L
-        '',   // M
-        client || '', // N
-      ]);
+      let safeComment = String(item.comment || '').trim();
+      if (safeComment === '+') safeComment = "'+";
 
+      if (!productName) continue;
+      if (!priceNumber) continue;
+
+      for (let i = 0; i < qty; i++) {
+        const profit = priceNumber - costNumber - commissionNumber;
+
+        values.push([
+          date,
+          saleChannel,
+          productName,
+          kaspiOrderNumber,
+          costNumber,
+          priceNumber,
+          commissionNumber,
+          profit,
+          safeComment,
+          '',
+          '',
+          '',
+          '',
+          client || '',
+        ]);
+      }
     }
 
-    await sheetsApi.spreadsheets.values.append({
+    if (values.length === 0) {
+      return res.status(400).json({ error: 'Нет товаров для добавления' });
+    }
+
+    const sheetsApi = await getSheetsApi();
+
+    const current = await sheetsApi.spreadsheets.values.get({
       spreadsheetId: SALES_SPREADSHEET_ID,
-      range: SALES_WRITE_RANGE,
+      range: 'Лист1!A:A',
+    });
+
+    const usedRows = current.data.values || [];
+    const nextRow = usedRows.length + 1;
+
+    await sheetsApi.spreadsheets.values.update({
+      spreadsheetId: SALES_SPREADSHEET_ID,
+      range: `Лист1!A${nextRow}:N${nextRow + values.length - 1}`,
       valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
       requestBody: { values },
     });
 
@@ -505,7 +527,6 @@ app.post('/delete-sale', async (req, res) => {
     });
   }
 });
-
 
 // ================= РАСХОДЫ =================
 
@@ -658,7 +679,11 @@ app.get('/analytics', async (req, res) => {
     const from = dateFrom ? parseDate(dateFrom) : null;
     const to = dateTo ? parseDate(dateTo) : null;
 
-    const salesRows = await getRows(SALES_RANGE);
+    const salesRows = await getRowsFromSpreadsheet(
+      SALES_SPREADSHEET_ID,
+      SALES_RANGE
+    );
+
     const expenseRows = await getRows(EXPENSES_RANGE);
     const distributionRows = await getRows(DISTRIBUTION_RANGE);
     const planRows = await getRows(PLAN_RANGE);
@@ -695,15 +720,9 @@ app.get('/analytics', async (req, res) => {
 
       const rrc = toNumber(getCell(row, ['РРЦ', 'Выручка', 'Цена', 'price'], 5));
       const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
-      const commission = toNumber(
-        getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6)
-      );
+      const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
 
-      const profitFromSheet = toNumber(
-        getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7)
-      );
-
-      const rowRevenue = rrc;
+      const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7));
       const profit = profitFromSheet !== 0 ? profitFromSheet : rrc - cost - commission;
 
       let shares;
@@ -720,18 +739,18 @@ app.get('/analytics', async (req, res) => {
       const rowMyProfit = profit * shares.stasShare;
       const rowAlexProfit = profit * shares.alexShare;
 
-      revenue += rowRevenue;
+      revenue += rrc;
       totalProfit += profit;
       myProfit += rowMyProfit;
       alexProfit += rowAlexProfit;
       salesCount++;
 
       if (channel === 'Каспий') {
-        kaspiRevenue += rowRevenue;
+        kaspiRevenue += rrc;
         kaspiProfit += profit;
         kaspiCount++;
       } else {
-        optRevenue += rowRevenue;
+        optRevenue += rrc;
         optProfit += profit;
         optCount++;
       }
@@ -741,7 +760,6 @@ app.get('/analytics', async (req, res) => {
       }
 
       const dateKey = String(getRowDate(row)).trim();
-
       if (dateKey) {
         dailyMap[dateKey] = (dailyMap[dateKey] || 0) + profit;
       }
@@ -759,7 +777,7 @@ app.get('/analytics', async (req, res) => {
         };
       }
 
-      brandMap[brand].revenue += rowRevenue;
+      brandMap[brand].revenue += rrc;
       brandMap[brand].profit += profit;
       brandMap[brand].myProfit += rowMyProfit;
       brandMap[brand].alexProfit += rowAlexProfit;
@@ -777,7 +795,7 @@ app.get('/analytics', async (req, res) => {
           };
         }
 
-        clientMap[client].revenue += rowRevenue;
+        clientMap[client].revenue += rrc;
         clientMap[client].profit += profit;
         clientMap[client].myProfit += rowMyProfit;
         clientMap[client].alexProfit += rowAlexProfit;
@@ -884,9 +902,6 @@ app.get('/analytics', async (req, res) => {
     });
   }
 });
-
-
-
 
 // ================= НАКЛАДНАЯ EXCEL =================
 

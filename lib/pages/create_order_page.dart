@@ -94,6 +94,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   void _onProductChanged(String value) {
     final query = value.toLowerCase().trim();
+    final selectedType = _selectedPriceType.toLowerCase().trim();
 
     if (query.isEmpty) {
       setState(() => _filteredPrices = []);
@@ -106,13 +107,18 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         final model = (item['model'] ?? '').toString().toLowerCase();
         final fullName = (item['fullName'] ?? '').toString().toLowerCase();
         final source = (item['source'] ?? '').toString().toLowerCase();
-        final priceType = (item['priceType'] ?? '').toString().toLowerCase();
+        final priceType =
+        (item['priceType'] ?? '').toString().toLowerCase().trim();
 
-        return brand.contains(query) ||
-            model.contains(query) ||
-            fullName.contains(query) ||
-            source.contains(query) ||
-            priceType.contains(query);
+        final matchesProduct =
+            brand.contains(query) ||
+                model.contains(query) ||
+                fullName.contains(query) ||
+                source.contains(query);
+
+        final matchesPriceType = priceType == selectedType;
+
+        return matchesProduct && matchesPriceType;
       }).take(30).toList();
     });
   }
@@ -276,32 +282,24 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     setState(() => _isSaving = true);
 
     try {
-      int added = 0;
+      final response = await http.post(
+        Uri.parse('$baseUrl/add-sale'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'items': _invoiceItems,
+          'client': client,
+          'channel': _selectedChannel,
+          'orderNumber': orderNumber,
+        }),
+      );
 
-      for (final item in _invoiceItems) {
-        final response = await http.post(
-          Uri.parse('$baseUrl/add-sale'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'name': item['name'],
-            'quantity': item['quantity'],
-            'cost': item['cost'],
-            'price': item['price'],
-            'commission': item['commission'],
-            'comment': item['comment'],
-            'client': client,
-            'channel': _selectedChannel,
-            'orderNumber': orderNumber,
-          }),
-        );
-
-        if (response.statusCode != 200) {
-          _showMessage('Ошибка: ${response.body}');
-          return;
-        }
-
-        added += item['quantity'] as int;
+      if (response.statusCode != 200) {
+        _showMessage('Ошибка: ${response.body}');
+        return;
       }
+
+      final data = jsonDecode(response.body);
+      final added = data['added'] ?? 0;
 
       setState(() {
         _invoiceItems.clear();
@@ -318,6 +316,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       }
     }
   }
+
 
   Future<void> _saveInvoiceExcel() async {
     if (_invoiceItems.isEmpty) {
@@ -471,11 +470,17 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
             setState(() {
               _selectedPriceType = value;
-              _filteredPrices = [];
-              _productController.clear();
               _priceController.clear();
               _costController.clear();
+
+              if (_productController.text.trim().isEmpty) {
+                _filteredPrices = [];
+              }
             });
+
+            if (_productController.text.trim().isNotEmpty) {
+              _onProductChanged(_productController.text);
+            }
           },
         ),
       ),
