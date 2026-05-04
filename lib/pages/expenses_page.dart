@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:my_app/services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
@@ -15,12 +16,64 @@ class _ExpensesPageState extends State<ExpensesPage> {
   final TextEditingController _commentController = TextEditingController();
 
   String _selectedType = 'Стас';
+  bool _isSaving = false;
 
   @override
   void dispose() {
     _amountController.dispose();
     _commentController.dispose();
     super.dispose();
+  }
+
+  double _toDouble(String value) {
+    return double.tryParse(
+      value
+          .replaceAll('₸', '')
+          .replaceAll(' ', '')
+          .replaceAll(',', '.')
+          .trim(),
+    ) ??
+        0;
+  }
+
+  Future<void> _saveExpense() async {
+    final amount = _toDouble(_amountController.text);
+    final comment = _commentController.text.trim();
+
+    if (amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите сумму расхода')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      await ApiService.addExpense(
+        amount: amount,
+        owner: _selectedType,
+        type: _selectedType,
+        comment: comment,
+      );
+
+      _amountController.clear();
+      _commentController.clear();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Расход сохранён')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 
   List<Color> get _accentColors {
@@ -77,6 +130,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
   Widget _input({
     required TextEditingController controller,
     required String hint,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
       decoration: AppUi.cardDecoration(
@@ -85,7 +139,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
       ),
       child: TextField(
         controller: controller,
-        keyboardType: TextInputType.number,
+        keyboardType: keyboardType,
         style: const TextStyle(
           color: AppColors.textMain,
           fontWeight: FontWeight.w700,
@@ -159,16 +213,14 @@ class _ExpensesPageState extends State<ExpensesPage> {
                       SizedBox(height: 8),
                       Text(
                         'Выбери тип расхода и добавь сумму.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                        ),
+                        style: TextStyle(color: AppColors.textSecondary),
                       ),
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 16),
 
-                /// ТИП РАСХОДА
                 AppUi.sectionCard(
                   title: 'Тип расхода',
                   icon: Icons.tune,
@@ -196,7 +248,6 @@ class _ExpensesPageState extends State<ExpensesPage> {
 
                 const SizedBox(height: 16),
 
-                /// СУММА
                 AppUi.sectionCard(
                   title: 'Сумма',
                   icon: Icons.payments_outlined,
@@ -204,12 +255,12 @@ class _ExpensesPageState extends State<ExpensesPage> {
                   child: _input(
                     controller: _amountController,
                     hint: 'Введите сумму',
+                    keyboardType: TextInputType.number,
                   ),
                 ),
 
                 const SizedBox(height: 16),
 
-                /// КОММЕНТ
                 AppUi.sectionCard(
                   title: 'Комментарий',
                   icon: Icons.notes,
@@ -222,7 +273,6 @@ class _ExpensesPageState extends State<ExpensesPage> {
 
                 const SizedBox(height: 16),
 
-                /// ПОДСКАЗКА
                 AppUi.sectionCard(
                   title: 'Как будет считаться',
                   icon: Icons.info_outline,
@@ -238,20 +288,14 @@ class _ExpensesPageState extends State<ExpensesPage> {
 
                 const SizedBox(height: 20),
 
-                /// КНОПКА
                 SizedBox(
                   width: double.infinity,
                   child: GradientButton(
-                    text: 'СОХРАНИТЬ РАСХОД',
+                    text: _isSaving ? 'СОХРАНЯЮ...' : 'СОХРАНИТЬ РАСХОД',
                     icon: Icons.save,
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Тип: $_selectedType | сумма: ${_amountController.text}',
-                          ),
-                        ),
-                      );
+                      if (_isSaving) return;
+                      _saveExpense();
                     },
                   ),
                 ),

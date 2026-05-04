@@ -24,6 +24,8 @@ class _SalesPageState extends State<SalesPage> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
 
+  final Set<int> _deletingRows = {};
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +63,83 @@ class _SalesPageState extends State<SalesPage> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _deleteSale(Map<String, dynamic> row) async {
+    final rowIndexRaw = row['__index'];
+    final rowIndex = rowIndexRaw is int
+        ? rowIndexRaw
+        : int.tryParse(rowIndexRaw.toString()) ?? 0;
+
+    if (rowIndex <= 0) {
+      _showMessage('Не найден номер строки для удаления');
+      return;
+    }
+
+    final product = (row['Наименование'] ?? row['Товар'] ?? 'Без названия').toString();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text(
+            'Удалить продажу?',
+            style: TextStyle(
+              color: AppColors.textMain,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          content: Text(
+            product,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              height: 1.35,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                'Удалить',
+                style: TextStyle(color: AppColors.danger),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _deletingRows.add(rowIndex);
+    });
+
+    try {
+      await ApiService.deleteSale(rowIndex);
+      _showMessage('Продажа удалена');
+      await _loadSales();
+    } catch (e) {
+      _showMessage('Ошибка удаления: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingRows.remove(rowIndex);
+        });
+      }
+    }
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
   }
 
   DateTime? _parseDate(dynamic raw) {
@@ -105,7 +184,11 @@ class _SalesPageState extends State<SalesPage> {
 
   double _toDouble(dynamic value) {
     if (value == null) return 0;
-    final cleaned = value.toString().replaceAll(' ', '').replaceAll(',', '.');
+    final cleaned = value
+        .toString()
+        .replaceAll('₸', '')
+        .replaceAll(' ', '')
+        .replaceAll(',', '.');
     return double.tryParse(cleaned) ?? 0;
   }
 
@@ -125,6 +208,9 @@ class _SalesPageState extends State<SalesPage> {
   }
 
   double _profit(Map<String, dynamic> row) {
+    final profitFromSheet = _toDouble(row['Чистая прибыль']);
+    if (profitFromSheet != 0) return profitFromSheet;
+
     final rrc = _toDouble(row['РРЦ']);
     final cost = _toDouble(row['Себестоимость']);
     final commission = _toDouble(row['Комиссия Kaspi']);
@@ -161,9 +247,10 @@ class _SalesPageState extends State<SalesPage> {
     final filtered = _allSales.where((row) {
       final date = _parseDate(row['Дата']);
       final channel = _detectChannel(row);
-      final product = (row['Наименование'] ?? '').toString();
+      final product = (row['Наименование'] ?? row['Товар'] ?? '').toString();
       final brand = (row['Бренд'] ?? '').toString();
       final order = (row['Номер заказа'] ?? '').toString();
+      final client = (row['Клиент'] ?? '').toString();
 
       if (_selectedChannel != 'Все' && channel != _selectedChannel) {
         return false;
@@ -184,7 +271,7 @@ class _SalesPageState extends State<SalesPage> {
       }
 
       if (search.isNotEmpty) {
-        final haystack = '$product $brand $order $channel'.toLowerCase();
+        final haystack = '$product $brand $order $channel $client'.toLowerCase();
         if (!haystack.contains(search)) return false;
       }
 
@@ -204,11 +291,14 @@ class _SalesPageState extends State<SalesPage> {
 
   String _formatMoney(double value) {
     final rounded = value.round().toString();
+    final isNegative = rounded.startsWith('-');
+    final cleanNumber = rounded.replaceAll('-', '');
+
     final buffer = StringBuffer();
     int counter = 0;
 
-    for (int i = rounded.length - 1; i >= 0; i--) {
-      buffer.write(rounded[i]);
+    for (int i = cleanNumber.length - 1; i >= 0; i--) {
+      buffer.write(cleanNumber[i]);
       counter++;
       if (counter == 3 && i != 0) {
         buffer.write(' ');
@@ -216,7 +306,8 @@ class _SalesPageState extends State<SalesPage> {
       }
     }
 
-    return buffer.toString().split('').reversed.join();
+    final result = buffer.toString().split('').reversed.join();
+    return '${isNegative ? '-' : ''}$result';
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
@@ -245,8 +336,10 @@ class _SalesPageState extends State<SalesPage> {
   }
 
   Widget _buildSaleCard(Map<String, dynamic> row) {
-    final product = (row['Наименование'] ?? 'Без названия').toString();
+    final product =
+    (row['Наименование'] ?? row['Товар'] ?? 'Без названия').toString();
     final brand = (row['Бренд'] ?? '').toString();
+    final client = (row['Клиент'] ?? '').toString();
     final date = (row['Дата'] ?? '').toString();
     final channel = _detectChannel(row);
     final order = (row['Номер заказа'] ?? '').toString();
@@ -254,6 +347,13 @@ class _SalesPageState extends State<SalesPage> {
     final cost = _toDouble(row['Себестоимость']);
     final commission = _toDouble(row['Комиссия Kaspi']);
     final profit = _profit(row);
+
+    final rowIndexRaw = row['__index'];
+    final rowIndex = rowIndexRaw is int
+        ? rowIndexRaw
+        : int.tryParse(rowIndexRaw.toString()) ?? 0;
+
+    final isDeleting = _deletingRows.contains(rowIndex);
 
     final accent = channel == 'Каспий'
         ? const Color(0xFF4DA3FF)
@@ -310,7 +410,35 @@ class _SalesPageState extends State<SalesPage> {
                           ),
                         ),
                       ],
+                      if (client.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Клиент: $client',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                isDeleting
+                    ? const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.danger,
+                  ),
+                )
+                    : IconButton(
+                  onPressed: () => _deleteSale(row),
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: AppColors.danger,
                   ),
                 ),
               ],
@@ -522,9 +650,12 @@ class _SalesPageState extends State<SalesPage> {
                       children: [
                         TextField(
                           controller: _searchController,
-                          style: const TextStyle(color: AppColors.textMain),
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                          ),
                           decoration: InputDecoration(
-                            hintText: 'Поиск по товару / заказу / каналу',
+                            hintText:
+                            'Поиск по товару / заказу / клиенту / каналу',
                             hintStyle: const TextStyle(
                               color: AppColors.textSecondary,
                             ),
@@ -555,7 +686,8 @@ class _SalesPageState extends State<SalesPage> {
                             children: [
                               AppUi.periodButton(
                                 title: 'Сегодня',
-                                selected: _selectedPeriod == 'Сегодня',
+                                selected:
+                                _selectedPeriod == 'Сегодня',
                                 onTap: () {
                                   setState(() {
                                     _selectedPeriod = 'Сегодня';
@@ -589,7 +721,8 @@ class _SalesPageState extends State<SalesPage> {
                               const SizedBox(width: 8),
                               AppUi.periodButton(
                                 title: '30 дней',
-                                selected: _selectedPeriod == '30 дней',
+                                selected:
+                                _selectedPeriod == '30 дней',
                                 onTap: () {
                                   setState(() {
                                     _selectedPeriod = '30 дней';
@@ -632,8 +765,10 @@ class _SalesPageState extends State<SalesPage> {
                           children: [
                             Expanded(
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(18),
-                                onTap: () => _pickDate(isFrom: true),
+                                borderRadius:
+                                BorderRadius.circular(18),
+                                onTap: () =>
+                                    _pickDate(isFrom: true),
                                 child: AppUi.dateBox(
                                   title: 'С',
                                   value: _dateFrom == null
@@ -645,8 +780,10 @@ class _SalesPageState extends State<SalesPage> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(18),
-                                onTap: () => _pickDate(isFrom: false),
+                                borderRadius:
+                                BorderRadius.circular(18),
+                                onTap: () =>
+                                    _pickDate(isFrom: false),
                                 child: AppUi.dateBox(
                                   title: 'По',
                                   value: _dateTo == null
@@ -661,7 +798,9 @@ class _SalesPageState extends State<SalesPage> {
                         DropdownButtonFormField<String>(
                           value: _selectedChannel,
                           dropdownColor: AppColors.card,
-                          style: const TextStyle(color: AppColors.textMain),
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                          ),
                           iconEnabledColor: AppColors.textSecondary,
                           decoration: InputDecoration(
                             filled: true,
