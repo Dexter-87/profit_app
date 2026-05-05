@@ -17,8 +17,8 @@ const SALES_SPREADSHEET_ID = '1D26s-VjLPvg43z-Hk38fU7Y4tPFZ9h-UfFjJzQnvtB0';
 const TEEG_PRICE_SPREADSHEET_ID = '16WJB_55AWQiKOvyplY4eA1hQnJHGB4JzxF4640vMp8s';
 const ARISTON_PRICE_SPREADSHEET_ID = '11cAH2QbdH-FcK5oY0m59GFsr77V3HHzZ47jxC0WOKR0';
 
-const SALES_RANGE = 'Лист1!A:N';
-const SALES_WRITE_RANGE = 'Лист1!A:N';
+const SALES_RANGE = 'Лист1!A:O';
+const SALES_WRITE_RANGE = 'Лист1!A:O';
 
 const EXPENSES_RANGE = 'Expenses!A:Z';
 const PLAN_RANGE = 'app_plan!A:Z';
@@ -201,6 +201,31 @@ function detectBrand(name) {
   return 'Другое';
 }
 
+function cleanProductName(value) {
+  let text = String(value || '').trim();
+  text = text.replace(/\s+/g, ' ');
+
+  const brands = ['Thermex', 'Ariston', 'Etalon', 'Edison', 'Garanterm'];
+
+  for (const brand of brands) {
+    text = text.replace(new RegExp(`^${brand}\\s+${brand}\\s+`, 'i'), `${brand} `);
+    text = text.replace(new RegExp(`^${brand}\\s+${brand.toUpperCase()}\\s+`, 'i'), `${brand} `);
+    text = text.replace(new RegExp(`^${brand.toUpperCase()}\\s+${brand}\\s+`, 'i'), `${brand} `);
+    text = text.replace(new RegExp(`^${brand.toUpperCase()}\\s+${brand.toUpperCase()}\\s+`, 'i'), `${brand} `);
+
+    text = text.replace(
+      new RegExp(`^${brand}\\s+Водонагреватель\\s+${brand}\\s+`, 'i'),
+      `${brand} Водонагреватель `
+    );
+  }
+
+  text = text.replace(/^Ariston\s+Водонагреватель\s+Ariston\s+/i, 'Ariston Водонагреватель ');
+  text = text.replace(/^Thermex\s+THERMEX\s+/i, 'Thermex ');
+  text = text.replace(/^Etalon\s+ETALON\s+/i, 'Etalon ');
+
+  return text.trim();
+}
+
 function getCurrentModelShares(row, name, comment) {
   let stasShare = toNumber(getCell(row, ['Доля Стас', 'stasShare'], 11));
   let alexShare = toNumber(getCell(row, ['Доля Алексей', 'alexShare'], 12));
@@ -299,6 +324,8 @@ function normalizePriceRows(rows, source) {
       const price = toNumber(getCell(row, ['Цена', 'price'], 3));
       const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
 
+      const fullName = cleanProductName(`${brand} ${model}`.trim());
+
       return {
         brand,
         model,
@@ -306,7 +333,7 @@ function normalizePriceRows(rows, source) {
         price,
         cost,
         source,
-        fullName: `${brand} ${model}`.trim(),
+        fullName,
       };
     })
     .filter((item) => item.model && item.price > 0);
@@ -349,9 +376,9 @@ app.get('/sales', async (req, res) => {
     );
 
     const sales = rows.map((row) => {
-      const product = String(
+      const product = cleanProductName(
         getCell(row, ['Наименование', 'Товар', 'Модель', 'Название'], 2)
-      ).trim();
+      );
 
       return {
         ...row,
@@ -389,10 +416,6 @@ app.post('/add-sale', async (req, res) => {
       orderNumber,
     } = req.body;
 
-    const saleChannel = String(channel || 'ОПТ').trim();
-    const kaspiOrderNumber =
-      saleChannel === 'Каспий' ? String(orderNumber || '').trim() : '';
-
     const sourceItems = Array.isArray(items) && items.length > 0
       ? items
       : [
@@ -403,21 +426,36 @@ app.post('/add-sale', async (req, res) => {
             price,
             commission,
             comment,
+            client,
+            channel,
+            orderNumber,
           },
         ];
 
     const date = todayRu();
+    const batchId = `BATCH-${Date.now()}`;
     const values = [];
 
     for (const item of sourceItems) {
-      const productName = String(item.name || item.model || '').trim();
+      const productName = cleanProductName(item.name || item.model || '');
       const qty = Math.max(1, parseInt(item.quantity || 1, 10));
       const costNumber = toNumber(item.cost);
       const priceNumber = toNumber(item.price);
-      const commissionNumber =
-        saleChannel === 'Каспий' ? toNumber(item.commission || commission) : 0;
 
-      let safeComment = String(item.comment || '').trim();
+      const itemChannel = String(item.channel || channel || 'ОПТ').trim();
+      const itemOrderNumber =
+        itemChannel === 'Каспий'
+          ? String(item.orderNumber || orderNumber || '').trim()
+          : '';
+
+      const itemClient = String(item.client || client || '').trim();
+
+      const commissionNumber =
+        itemChannel === 'Каспий'
+          ? toNumber(item.commission || commission || 0)
+          : 0;
+
+      let safeComment = String(item.comment || comment || '').trim();
       if (safeComment === '+') safeComment = "'+";
 
       if (!productName) continue;
@@ -428,9 +466,9 @@ app.post('/add-sale', async (req, res) => {
 
         values.push([
           date,
-          saleChannel,
+          itemChannel,
           productName,
-          kaspiOrderNumber,
+          itemOrderNumber,
           costNumber,
           priceNumber,
           commissionNumber,
@@ -440,7 +478,8 @@ app.post('/add-sale', async (req, res) => {
           '',
           '',
           '',
-          client || '',
+          itemClient,
+          batchId,
         ]);
       }
     }
@@ -461,12 +500,12 @@ app.post('/add-sale', async (req, res) => {
 
     await sheetsApi.spreadsheets.values.update({
       spreadsheetId: SALES_SPREADSHEET_ID,
-      range: `Лист1!A${nextRow}:N${nextRow + values.length - 1}`,
+      range: `Лист1!A${nextRow}:O${nextRow + values.length - 1}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values },
     });
 
-    res.json({ ok: true, added: values.length });
+    res.json({ ok: true, added: values.length, batchId });
   } catch (error) {
     console.error('Ошибка /add-sale:', error);
     res.status(500).json({
@@ -614,7 +653,7 @@ app.post('/add-stock', async (req, res) => {
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: {
-        values: [[name, quantity]],
+        values: [[cleanProductName(name), quantity]],
       },
     });
 
@@ -627,8 +666,6 @@ app.post('/add-stock', async (req, res) => {
     });
   }
 });
-
-
 
 // ================= ПЛАН =================
 
@@ -764,7 +801,7 @@ app.get('/analytics', async (req, res) => {
     for (const row of salesRows) {
       if ((from || to) && !rowInPeriod(getRowDate(row), from, to)) continue;
 
-      const name = String(getCell(row, ['Наименование', 'Товар', 'name'], 2)).trim();
+      const name = cleanProductName(getCell(row, ['Наименование', 'Товар', 'name'], 2));
       const channel = getChannel(row);
       const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
       const client = String(getCell(row, ['Клиент', 'client'], 13)).trim();
@@ -1014,7 +1051,7 @@ app.post('/invoice-excel', async (req, res) => {
 
       const row = sheet.addRow([
         index + 1,
-        item.name || '',
+        cleanProductName(item.name || ''),
         qty,
         cost,
         price,
@@ -1124,7 +1161,7 @@ app.post('/invoice-pdf', (req, res) => {
       }
 
       doc.text(String(index + 1), 40, y);
-      doc.text(String(item.name || ''), 65, y, { width: 240 });
+      doc.text(cleanProductName(item.name || ''), 65, y, { width: 240 });
       doc.text(String(qty), 315, y);
       doc.text(money(price), 370, y);
       doc.text(money(sum), 455, y);
@@ -1184,10 +1221,8 @@ app.get('/expenses-report/pdf', async (req, res) => {
       'attachment; filename=expenses-report.pdf'
     );
 
-
     doc.pipe(res);
 
-    // ===== ШАПКА =====
     doc.fontSize(22).text('TechnoOpt', { align: 'center' });
     doc.moveDown(0.3);
     doc.fontSize(18).text('Отчёт по расходам', { align: 'center' });
@@ -1198,7 +1233,6 @@ app.get('/expenses-report/pdf', async (req, res) => {
 
     doc.moveDown();
 
-    // ===== ТАБЛИЦА =====
     let y = doc.y;
 
     doc.fontSize(10);
@@ -1244,7 +1278,6 @@ app.get('/expenses-report/pdf', async (req, res) => {
     doc.moveTo(40, y).lineTo(555, y).stroke();
     y += 15;
 
-    // ===== ИТОГИ =====
     doc.fontSize(14).text(`ИТОГО: ${money(total)}`, 400, y, {
       align: 'right',
     });
@@ -1310,7 +1343,7 @@ async function buildAnalyticsReportData(req) {
   for (const row of salesRows) {
     if ((from || to) && !rowInPeriod(getRowDate(row), from, to)) continue;
 
-    const name = String(getCell(row, ['Наименование', 'Товар', 'name'], 2)).trim();
+    const name = cleanProductName(getCell(row, ['Наименование', 'Товар', 'name'], 2));
     const channel = getChannel(row);
     const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
     const client = String(getCell(row, ['Клиент', 'client'], 13)).trim() || 'Без клиента';
@@ -1540,7 +1573,7 @@ app.get('/business-report/pdf', async (req, res) => {
 
     data.topProducts.forEach((item, index) => {
       y = checkPage(doc, y);
-      doc.text(`${index + 1}. ${item.name}`, 40, y, { width: 360 });
+      doc.text(`${index + 1}. ${cleanProductName(item.name)}`, 40, y, { width: 360 });
       doc.text(money(item.profit), 430, y);
       y += 24;
     });
@@ -1683,15 +1716,15 @@ app.get('/stock-report/pdf', async (req, res) => {
     ];
 
     function findPrice(name) {
-      const n = String(name || '').toLowerCase().trim();
+      const n = cleanProductName(name).toLowerCase().trim();
 
       return prices.find((p) => {
-        const model = String(p.model || '').toLowerCase().trim();
-        const fullName = String(p.fullName || '').toLowerCase().trim();
+        const model = cleanProductName(p.model || '').toLowerCase().trim();
+        const fullName = cleanProductName(p.fullName || '').toLowerCase().trim();
         return model === n || fullName === n;
       }) || prices.find((p) => {
-        const model = String(p.model || '').toLowerCase().trim();
-        const fullName = String(p.fullName || '').toLowerCase().trim();
+        const model = cleanProductName(p.model || '').toLowerCase().trim();
+        const fullName = cleanProductName(p.fullName || '').toLowerCase().trim();
         return model.includes(n) || fullName.includes(n) || n.includes(model);
       });
     }
@@ -1740,9 +1773,9 @@ app.get('/stock-report/pdf', async (req, res) => {
     drawHeader();
 
     stockRows.forEach((row, index) => {
-      const name = String(
+      const name = cleanProductName(
         getCell(row, ['Наименование', 'name', 'Модель', 'model'], 0)
-      ).trim();
+      );
 
       const qty = toNumber(
         getCell(row, ['Количество', 'quantity', 'qty'], 1)
@@ -1802,8 +1835,6 @@ app.get('/stock-report/pdf', async (req, res) => {
     });
   }
 });
-
-
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);

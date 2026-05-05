@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
@@ -24,7 +26,7 @@ class _SalesPageState extends State<SalesPage> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
 
-  final Set<int> _deletingRows = {};
+  final Set<String> _deletingBatches = {};
 
   @override
   void initState() {
@@ -65,33 +67,77 @@ class _SalesPageState extends State<SalesPage> {
     }
   }
 
-  Future<void> _deleteSale(Map<String, dynamic> row) async {
-    final rowIndexRaw = row['__index'];
-    final rowIndex = rowIndexRaw is int
-        ? rowIndexRaw
-        : int.tryParse(rowIndexRaw.toString()) ?? 0;
+  String _batchId(Map<String, dynamic> row) {
+    final raw = (row['batchId'] ??
+        row['BatchId'] ??
+        row['BATCHID'] ??
+        row['Накладная'] ??
+        '')
+        .toString()
+        .trim();
 
-    if (rowIndex <= 0) {
-      _showMessage('Не найден номер строки для удаления');
-      return;
+    if (raw.isNotEmpty) return raw;
+
+    final rowIndex = (row['__index'] ?? '').toString();
+    return 'ROW-$rowIndex';
+  }
+
+  bool _isLegacyBatch(String batchId) => batchId.startsWith('ROW-');
+
+  List<List<Map<String, dynamic>>> get _groups {
+    final map = LinkedHashMap<String, List<Map<String, dynamic>>>();
+
+    for (final row in _filteredSales) {
+      final batch = _batchId(row);
+      map.putIfAbsent(batch, () => []);
+      map[batch]!.add(row);
     }
 
-    final product = (row['Наименование'] ?? row['Товар'] ?? 'Без названия').toString();
+    final groups = map.values.toList();
+
+    groups.sort((a, b) {
+      final aIndex = a
+          .map((x) => int.tryParse((x['__index'] ?? '0').toString()) ?? 0)
+          .fold<int>(0, (m, v) => v > m ? v : m);
+
+      final bIndex = b
+          .map((x) => int.tryParse((x['__index'] ?? '0').toString()) ?? 0)
+          .fold<int>(0, (m, v) => v > m ? v : m);
+
+      return bIndex.compareTo(aIndex);
+    });
+
+    return groups;
+  }
+
+  Future<void> _deleteBatch(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+
+    final batch = _batchId(rows.first);
+    final isLegacy = _isLegacyBatch(batch);
+
+    final title = isLegacy
+        ? 'Удалить продажу?'
+        : 'Удалить накладную целиком?';
+
+    final text = isLegacy
+        ? 'Будет удалена 1 строка продажи.'
+        : 'Будут удалены все позиции этой накладной: ${rows.length} шт.';
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: AppColors.card,
-          title: const Text(
-            'Удалить продажу?',
-            style: TextStyle(
+          title: Text(
+            title,
+            style: const TextStyle(
               color: AppColors.textMain,
               fontWeight: FontWeight.w900,
             ),
           ),
           content: Text(
-            product,
+            text,
             style: const TextStyle(
               color: AppColors.textSecondary,
               height: 1.35,
@@ -117,19 +163,28 @@ class _SalesPageState extends State<SalesPage> {
     if (confirmed != true) return;
 
     setState(() {
-      _deletingRows.add(rowIndex);
+      _deletingBatches.add(batch);
     });
 
     try {
-      await ApiService.deleteSale(rowIndex);
-      _showMessage('Продажа удалена');
+      final indexes = rows
+          .map((row) => int.tryParse((row['__index'] ?? '0').toString()) ?? 0)
+          .where((index) => index > 0)
+          .toList()
+        ..sort((a, b) => b.compareTo(a));
+
+      for (final rowIndex in indexes) {
+        await ApiService.deleteSale(rowIndex);
+      }
+
+      _showMessage(isLegacy ? 'Продажа удалена' : 'Накладная удалена');
       await _loadSales();
     } catch (e) {
       _showMessage('Ошибка удаления: $e');
     } finally {
       if (mounted) {
         setState(() {
-          _deletingRows.remove(rowIndex);
+          _deletingBatches.remove(batch);
         });
       }
     }
@@ -151,14 +206,12 @@ class _SalesPageState extends State<SalesPage> {
     value = value.replaceAll("'", '').trim();
 
     try {
-      // Google Sheets serial date: например 46146
       final serial = double.tryParse(value.replaceAll(',', '.'));
       if (serial != null && serial > 30000 && serial < 60000) {
         final baseDate = DateTime(1899, 12, 30);
         return baseDate.add(Duration(days: serial.floor()));
       }
 
-      // dd.mm.yyyy
       if (value.contains('.')) {
         final parts = value.split('.');
         if (parts.length == 3) {
@@ -169,13 +222,11 @@ class _SalesPageState extends State<SalesPage> {
         }
       }
 
-      // yyyy-mm-dd
       if (value.contains('-')) {
         final parsed = DateTime.tryParse(value);
         if (parsed != null) return parsed;
       }
 
-      // yyyy/mm/dd или mm/dd/yyyy
       if (value.contains('/')) {
         final parts = value.split('/');
         if (parts.length == 3) {
@@ -199,14 +250,15 @@ class _SalesPageState extends State<SalesPage> {
     }
   }
 
-
   double _toDouble(dynamic value) {
     if (value == null) return 0;
+
     final cleaned = value
         .toString()
         .replaceAll('₸', '')
         .replaceAll(' ', '')
         .replaceAll(',', '.');
+
     return double.tryParse(cleaned) ?? 0;
   }
 
@@ -232,6 +284,7 @@ class _SalesPageState extends State<SalesPage> {
     final rrc = _toDouble(row['РРЦ']);
     final cost = _toDouble(row['Себестоимость']);
     final commission = _toDouble(row['Комиссия Kaspi']);
+
     return rrc - cost - commission;
   }
 
@@ -265,10 +318,12 @@ class _SalesPageState extends State<SalesPage> {
     final filtered = _allSales.where((row) {
       final date = _parseDate(row['Дата']);
       final channel = _detectChannel(row);
+
       final product = (row['Наименование'] ?? row['Товар'] ?? '').toString();
       final brand = (row['Бренд'] ?? '').toString();
       final order = (row['Номер заказа'] ?? '').toString();
       final client = (row['Клиент'] ?? '').toString();
+      final batch = _batchId(row);
 
       if (_selectedChannel != 'Все' && channel != _selectedChannel) {
         return false;
@@ -289,7 +344,9 @@ class _SalesPageState extends State<SalesPage> {
       }
 
       if (search.isNotEmpty) {
-        final haystack = '$product $brand $order $channel $client'.toLowerCase();
+        final haystack =
+        '$product $brand $order $channel $client $batch'.toLowerCase();
+
         if (!haystack.contains(search)) return false;
       }
 
@@ -297,9 +354,9 @@ class _SalesPageState extends State<SalesPage> {
     }).toList();
 
     filtered.sort((a, b) {
-      final da = _parseDate(a['Дата']) ?? DateTime(2000);
-      final db = _parseDate(b['Дата']) ?? DateTime(2000);
-      return db.compareTo(da);
+      final ai = int.tryParse((a['__index'] ?? '0').toString()) ?? 0;
+      final bi = int.tryParse((b['__index'] ?? '0').toString()) ?? 0;
+      return bi.compareTo(ai);
     });
 
     setState(() {
@@ -318,6 +375,7 @@ class _SalesPageState extends State<SalesPage> {
     for (int i = cleanNumber.length - 1; i >= 0; i--) {
       buffer.write(cleanNumber[i]);
       counter++;
+
       if (counter == 3 && i != 0) {
         buffer.write(' ');
         counter = 0;
@@ -349,13 +407,50 @@ class _SalesPageState extends State<SalesPage> {
           _selectedPeriod = 'Свои даты';
         }
       });
+
       _applyFilters();
     }
   }
 
-  Widget _buildSaleCard(Map<String, dynamic> row) {
-    final product =
-    (row['Наименование'] ??
+  Widget _compactValue(String title, double value, {Color? color}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.stroke.withOpacity(0.7)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              '${_formatMoney(value)} ₸',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color ?? AppColors.textMain,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniSaleRow(Map<String, dynamic> row) {
+    final product = (row['Наименование'] ??
         row['Товар'] ??
         row['productName'] ??
         row['product'] ??
@@ -365,169 +460,153 @@ class _SalesPageState extends State<SalesPage> {
         .trim();
 
     final displayProduct = product.isEmpty ? 'Без названия' : product;
-    final client = (row['Клиент'] ?? '').toString().trim();
-    final date = (row['Дата'] ?? '').toString().trim();
+
     final channel = _detectChannel(row);
     final order = (row['Номер заказа'] ?? '').toString().trim();
 
     final rrc = _toDouble(row['РРЦ']);
-    final cost = _toDouble(row['Себестоимость']);
-    final commission = _toDouble(row['Комиссия Kaspi']);
     final profit = _profit(row);
-
-    final rowIndexRaw = row['__index'];
-    final rowIndex = rowIndexRaw is int
-        ? rowIndexRaw
-        : int.tryParse(rowIndexRaw.toString()) ?? 0;
-
-    final isDeleting = _deletingRows.contains(rowIndex);
 
     final accent = channel == 'Каспий'
         ? const Color(0xFF4DA3FF)
         : const Color(0xFF22C55E);
 
-    Widget compactValue(String title, double value, {Color? color}) {
-      return Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.bg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.stroke.withOpacity(0.7)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            displayProduct,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                '${_formatMoney(value)} ₸',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: color ?? AppColors.textMain,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: AppUi.cardDecoration(
-        radius: 18,
-        borderColor: accent.withOpacity(0.20),
-        shadows: [
-          BoxShadow(
-            color: accent.withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+          const SizedBox(height: 2),
+          Text(
+            '$channel'
+                '${order.isNotEmpty ? " • №$order" : ""}'
+                ' • ${_formatMoney(rrc)} ₸'
+                ' • приб. ${_formatMoney(profit)} ₸',
+            style: TextStyle(
+              color: profit >= 0
+                  ? AppColors.success
+                  : AppColors.danger,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),
+    );
+  }
+
+
+  Widget _buildBatchCard(List<Map<String, dynamic>> rows) {
+    final batch = _batchId(rows.first);
+    final isDeleting = _deletingBatches.contains(batch);
+
+    final date = (rows.first['Дата'] ?? '').toString().trim();
+
+    final totalRevenue =
+    rows.fold<double>(0, (sum, row) => sum + _toDouble(row['РРЦ']));
+    final totalProfit =
+    rows.fold<double>(0, (sum, row) => sum + _profit(row));
+
+    final channels = rows.map(_detectChannel).toSet().join(' / ');
+
+    final product = (rows.first['Наименование'] ??
+        rows.first['Товар'] ??
+        rows.first['productName'] ??
+        rows.first['product'] ??
+        rows.first['name'] ??
+        'Без названия')
+        .toString()
+        .trim();
+
+    final shortBatch = batch.replaceAll('BATCH-', '#');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: AppUi.cardDecoration(
+        radius: 18,
+        borderColor: AppColors.stroke.withOpacity(0.8),
+        shadows: const [],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                AppUi.iconBadge(
-                  icon: channel == 'Каспий'
-                      ? Icons.shopping_bag_outlined
-                      : Icons.local_shipping_outlined,
-                  accent: accent,
-                  size: 34,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    displayProduct,
-                    maxLines: 2,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Накладная $shortBatch от $date',
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.textMain,
                       fontSize: 14,
                       fontWeight: FontWeight.w900,
-                      height: 1.15,
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                isDeleting
-                    ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.danger,
+                  const SizedBox(height: 6),
+                  Text(
+                    rows.length == 1 ? product : '$product + ещё ${rows.length - 1}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                )
-                    : IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
+                  const SizedBox(height: 6),
+                  Text(
+                    '$channels • выручка ${_formatMoney(totalRevenue)} ₸ • прибыль ${_formatMoney(totalProfit)} ₸',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: totalProfit >= 0
+                          ? AppColors.success
+                          : AppColors.danger,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  onPressed: () => _deleteSale(row),
-                  icon: const Icon(
-                    Icons.delete_outline_rounded,
-                    color: AppColors.danger,
-                    size: 21,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                AppUi.chip(date.isEmpty ? 'Без даты' : date, accent: accent),
-                AppUi.chip(channel, accent: accent),
-                if (client.isNotEmpty) AppUi.chip(client, accent: accent),
-                if (order.isNotEmpty) AppUi.chip('№ $order', accent: accent),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            Row(
-              children: [
-                compactValue('РРЦ', rrc),
-                const SizedBox(width: 6),
-                compactValue('Себ', cost),
-                const SizedBox(width: 6),
-                compactValue(
-                  'Приб',
-                  profit,
-                  color: profit >= 0 ? AppColors.success : AppColors.danger,
-                ),
-              ],
-            ),
-
-            if (commission > 0) ...[
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  compactValue('Комиссия', commission),
                 ],
               ),
-            ],
+            ),
+            const SizedBox(width: 8),
+            isDeleting
+                ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.danger,
+              ),
+            )
+                : IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 32,
+                minHeight: 32,
+              ),
+              onPressed: () => _deleteBatch(rows),
+              icon: const Icon(
+                Icons.delete_outline,
+                color: AppColors.danger,
+                size: 21,
+              ),
+            ),
           ],
         ),
       ),
@@ -535,17 +614,22 @@ class _SalesPageState extends State<SalesPage> {
   }
 
 
+
   @override
   Widget build(BuildContext context) {
     final totalRevenue =
     _filteredSales.fold<double>(0, (sum, row) => sum + _toDouble(row['РРЦ']));
+
     final totalProfit =
     _filteredSales.fold<double>(0, (sum, row) => sum + _profit(row));
 
     final kaspiCount =
         _filteredSales.where((row) => _detectChannel(row) == 'Каспий').length;
+
     final optCount =
         _filteredSales.where((row) => _detectChannel(row) == 'ОПТ').length;
+
+    final groups = _groups;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -625,7 +709,7 @@ class _SalesPageState extends State<SalesPage> {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Поиск, фильтры, каналы и прибыль по каждой продаже.',
+                        'Продажи теперь сгруппированы по накладным.',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 14,
@@ -640,9 +724,9 @@ class _SalesPageState extends State<SalesPage> {
                   children: [
                     Expanded(
                       child: AppUi.metricCard(
-                        icon: Icons.shopping_bag_outlined,
-                        title: 'Продаж',
-                        value: _filteredSales.length.toString(),
+                        icon: Icons.receipt_long_outlined,
+                        title: 'Накладных',
+                        value: groups.length.toString(),
                         accentColors: const [
                           Color(0xFF4DA3FF),
                           Color(0xFF2D7DFF),
@@ -832,8 +916,7 @@ class _SalesPageState extends State<SalesPage> {
                               child: InkWell(
                                 borderRadius:
                                 BorderRadius.circular(18),
-                                onTap: () =>
-                                    _pickDate(isFrom: true),
+                                onTap: () => _pickDate(isFrom: true),
                                 child: AppUi.dateBox(
                                   title: 'С',
                                   value: _dateFrom == null
@@ -847,8 +930,7 @@ class _SalesPageState extends State<SalesPage> {
                               child: InkWell(
                                 borderRadius:
                                 BorderRadius.circular(18),
-                                onTap: () =>
-                                    _pickDate(isFrom: false),
+                                onTap: () => _pickDate(isFrom: false),
                                 child: AppUi.dateBox(
                                   title: 'По',
                                   value: _dateTo == null
@@ -912,7 +994,7 @@ class _SalesPageState extends State<SalesPage> {
                 if (_filteredSales.isEmpty)
                   AppUi.emptyBlock('По выбранным фильтрам продаж нет')
                 else
-                  ..._filteredSales.map(_buildSaleCard),
+                  ...groups.map(_buildBatchCard),
               ],
             ),
           ),

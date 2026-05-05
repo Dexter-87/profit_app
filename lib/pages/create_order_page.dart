@@ -110,11 +110,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         final priceType =
         (item['priceType'] ?? '').toString().toLowerCase().trim();
 
-        final matchesProduct =
-            brand.contains(query) ||
-                model.contains(query) ||
-                fullName.contains(query) ||
-                source.contains(query);
+        final matchesProduct = brand.contains(query) ||
+            model.contains(query) ||
+            fullName.contains(query) ||
+            source.contains(query);
 
         final matchesPriceType = priceType == selectedType;
 
@@ -128,12 +127,21 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       final brand = (item['brand'] ?? '').toString().trim();
       final model = (item['model'] ?? '').toString().trim();
 
-      _productController.text = '$brand $model'.trim();
+      final modelLower = model.toLowerCase();
+      final brandLower = brand.toLowerCase();
+
+      if (brand.isNotEmpty && modelLower.startsWith(brandLower)) {
+        _productController.text = model;
+      } else {
+        _productController.text = '$brand $model'.trim();
+      }
+
       _priceController.text = (item['price'] ?? 0).toString();
       _costController.text = (item['cost'] ?? 0).toString();
       _filteredPrices = [];
     });
   }
+
 
   double _toDouble(String value) {
     return double.tryParse(
@@ -221,8 +229,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     final quantity = _quantity;
     final cost = _cost;
     final price = _price;
-    final commission = _selectedChannel == 'Каспий' ? _commission : 0;
+    final channel = _selectedChannel;
+    final commission = channel == 'Каспий' ? _commission : 0;
     final comment = _commentController.text.trim();
+    final client = _clientController.text.trim();
+    final orderNumber = _orderController.text.trim();
 
     if (name.isEmpty) {
       _showMessage('Введите товар');
@@ -231,6 +242,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
     if (price <= 0) {
       _showMessage('Введите цену продажи');
+      return;
+    }
+
+    if (channel == 'Каспий' && orderNumber.isEmpty) {
+      _showMessage('Введите номер заказа Каспий');
       return;
     }
 
@@ -245,6 +261,12 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         'commission': commission,
         'comment': comment,
         'profit': profit,
+
+        // Главное исправление:
+        // эти поля теперь принадлежат конкретной строке
+        'channel': channel,
+        'client': client,
+        'orderNumber': orderNumber,
       });
 
       _productController.clear();
@@ -271,14 +293,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       if (_invoiceItems.isEmpty) return;
     }
 
-    final client = _clientController.text.trim();
-    final orderNumber = _orderController.text.trim();
-
-    if (_selectedChannel == 'Каспий' && orderNumber.isEmpty) {
-      _showMessage('Введите номер заказа Каспий');
-      return;
-    }
-
     setState(() => _isSaving = true);
 
     try {
@@ -287,9 +301,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'items': _invoiceItems,
-          'client': client,
-          'channel': _selectedChannel,
-          'orderNumber': orderNumber,
         }),
       );
 
@@ -303,8 +314,16 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
       setState(() {
         _invoiceItems.clear();
+        _productController.clear();
+        _quantityController.text = '1';
+        _costController.clear();
+        _priceController.clear();
+        _commissionController.clear();
+        _commentController.clear();
         _clientController.clear();
         _orderController.clear();
+        _selectedChannel = 'ОПТ';
+        _filteredPrices = [];
       });
 
       _showMessage('Продажи добавлены: $added шт');
@@ -316,7 +335,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       }
     }
   }
-
 
   Future<void> _saveInvoiceExcel() async {
     if (_invoiceItems.isEmpty) {
@@ -670,6 +688,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 final quantity = item['quantity'] as int;
                 final price = item['price'] as double;
                 final profit = item['profit'] as double;
+                final channel = (item['channel'] ?? '').toString();
+                final client = (item['client'] ?? '').toString();
+                final orderNumber = (item['orderNumber'] ?? '').toString();
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
@@ -700,6 +721,19 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                               style: const TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              [
+                                channel,
+                                if (client.isNotEmpty) client,
+                                if (orderNumber.isNotEmpty) '№ $orderNumber',
+                              ].join(' • '),
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ],
@@ -849,7 +883,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             children: [
               _headerCard(),
               const SizedBox(height: 16),
-
               AppUi.sectionCard(
                 title: 'Тип продажи',
                 icon: Icons.swap_horiz_rounded,
@@ -862,9 +895,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 16),
-
               AppUi.sectionCard(
                 title: 'Товар и клиент',
                 icon: Icons.inventory_2_outlined,
@@ -881,9 +912,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 16),
-
               if (_selectedChannel == 'Каспий') ...[
                 AppUi.sectionCard(
                   title: 'Данные Kaspi',
@@ -910,7 +939,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 ),
                 const SizedBox(height: 16),
               ],
-
               AppUi.sectionCard(
                 title: 'Финансы',
                 icon: Icons.payments_outlined,
@@ -959,9 +987,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 16),
-
               AppUi.sectionCard(
                 title: 'Комментарий',
                 icon: Icons.notes_rounded,
@@ -972,13 +998,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   icon: Icons.add_comment_outlined,
                 ),
               ),
-
               const SizedBox(height: 16),
-
               _invoiceBlock(),
-
               const SizedBox(height: 22),
-
               GradientButton(
                 text: _isSaving ? 'СОХРАНЯЮ...' : '+ ДОБАВИТЬ В ПРОДАЖИ',
                 onTap: () {
@@ -986,9 +1008,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   _saveOrder();
                 },
               ),
-
               const SizedBox(height: 12),
-
               Row(
                 children: [
                   Expanded(
@@ -1008,7 +1028,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 40),
             ],
           ),
