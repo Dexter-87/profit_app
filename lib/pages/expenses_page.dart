@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:my_app/services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
@@ -26,10 +28,16 @@ class _ExpensesPageState extends State<ExpensesPage> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
 
+  List<Map<String, dynamic>> _expenses = [];
+  bool _loadingExpenses = true;
+
+  int? _editingRowIndex;
+
   @override
   void initState() {
     super.initState();
     _applyPresetPeriod('30 дней', load: false);
+    _loadExpenses();
   }
 
   @override
@@ -39,9 +47,55 @@ class _ExpensesPageState extends State<ExpensesPage> {
     super.dispose();
   }
 
-  double _toDouble(String value) {
+  Future<void> _loadExpenses() async {
+    setState(() => _loadingExpenses = true);
+
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/expenses'));
+      final data = jsonDecode(response.body);
+
+      final all = List<Map<String, dynamic>>.from(data);
+
+      final filtered = all.where((item) {
+        final rawDate = (item['Date'] ?? item['Дата'] ?? item['date'] ?? '').toString();
+        final parts = rawDate.split('.');
+
+        if (parts.length != 3) return true;
+
+        final d = DateTime(
+          int.tryParse(parts[2]) ?? 2000,
+          int.tryParse(parts[1]) ?? 1,
+          int.tryParse(parts[0]) ?? 1,
+        );
+
+        if (_dateFrom != null) {
+          final from = DateTime(_dateFrom!.year, _dateFrom!.month, _dateFrom!.day);
+          if (d.isBefore(from)) return false;
+        }
+
+        if (_dateTo != null) {
+          final to = DateTime(_dateTo!.year, _dateTo!.month, _dateTo!.day);
+          if (d.isAfter(to)) return false;
+        }
+
+        return true;
+      }).toList();
+
+      setState(() {
+        _expenses = filtered.reversed.toList();
+      });
+    } catch (e) {
+      debugPrint(e.toString());
+    } finally {
+      setState(() => _loadingExpenses = false);
+    }
+  }
+
+
+  double _toDouble(dynamic value) {
     return double.tryParse(
       value
+          .toString()
           .replaceAll('₸', '')
           .replaceAll(' ', '')
           .replaceAll(',', '.')
@@ -50,8 +104,18 @@ class _ExpensesPageState extends State<ExpensesPage> {
         0;
   }
 
+  String _money(dynamic value) {
+    final number = _toDouble(value);
+
+    return '${number.toStringAsFixed(0).replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]} ',
+    )} ₸';
+  }
+
   String _formatApiDate(DateTime? date) {
     if (date == null) return '';
+
     return '${date.year.toString().padLeft(4, '0')}-'
         '${date.month.toString().padLeft(2, '0')}-'
         '${date.day.toString().padLeft(2, '0')}';
@@ -86,6 +150,8 @@ class _ExpensesPageState extends State<ExpensesPage> {
         _dateTo = null;
       }
     });
+    if (load) _loadExpenses();
+
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
@@ -116,7 +182,6 @@ class _ExpensesPageState extends State<ExpensesPage> {
     final to = _formatApiDate(_dateTo);
 
     final url = '$baseUrl/expenses-report/pdf?dateFrom=$from&dateTo=$to';
-
     html.window.open(url, '_blank');
   }
 
@@ -134,22 +199,44 @@ class _ExpensesPageState extends State<ExpensesPage> {
     setState(() => _isSaving = true);
 
     try {
-      await ApiService.addExpense(
-        amount: amount,
-        owner: _selectedType,
-        type: _selectedType,
-        comment: comment,
-      );
+      if (_editingRowIndex != null) {
+        final response = await http.put(
+          Uri.parse('$baseUrl/expenses/$_editingRowIndex'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'amount': amount,
+            'owner': _selectedType,
+            'type': _selectedType,
+            'comment': comment,
+          }),
+        );
+
+        if (response.statusCode != 200) {
+          throw Exception(response.body);
+        }
+      } else {
+        await ApiService.addExpense(
+          amount: amount,
+          owner: _selectedType,
+          type: _selectedType,
+          comment: comment,
+        );
+      }
 
       _amountController.clear();
       _commentController.clear();
+      _editingRowIndex = null;
+
+      await _loadExpenses();
 
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Расход сохранён')),
       );
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Ошибка: $e')),
       );
@@ -158,6 +245,45 @@ class _ExpensesPageState extends State<ExpensesPage> {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  Future<void> _deleteExpense(int rowIndex) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/expenses/$rowIndex'),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(response.body);
+      }
+
+      await _loadExpenses();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Расход удалён')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка удаления: $e')),
+      );
+    }
+  }
+
+  void _editExpense(Map<String, dynamic> item) {
+    setState(() {
+      _editingRowIndex = item['__index'];
+
+      _selectedType = item['Тип']?.toString().trim().isNotEmpty == true
+          ? item['Тип']
+          : 'Стас';
+
+      _amountController.text = item['Сумма']?.toString() ?? '';
+      _commentController.text = item['Комментарий']?.toString() ?? '';
+    });
   }
 
   List<Color> get _accentColors {
@@ -322,6 +448,83 @@ class _ExpensesPageState extends State<ExpensesPage> {
     );
   }
 
+  Widget _expenseCard(Map<String, dynamic> item) {
+    final type = item['Тип']?.toString() ?? '';
+    final amount = item['Сумма'];
+    final comment = item['Комментарий']?.toString() ?? '';
+    final date = (item['Date'] ?? item['Дата'] ?? item['date'] ?? '').toString();
+    final rowIndex = item['__index'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: AppUi.cardDecoration(radius: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  type,
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                _money(amount),
+                style: TextStyle(
+                  color: _accentColors.first,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            date,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            comment.isEmpty ? 'Без комментария' : comment,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: GradientButton(
+                  text: 'ИЗМЕНИТЬ',
+                  icon: Icons.edit,
+                  onTap: () => _editExpense(item),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: GradientButton(
+                  text: 'УДАЛИТЬ',
+                  icon: Icons.delete_outline,
+                  onTap: () => _deleteExpense(rowIndex),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -352,37 +555,25 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     radius: 28,
                     borderColor: _accentColors.first.withOpacity(0.25),
                   ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Добавить расход',
-                        style: TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Выбери тип расхода, добавь сумму и сформируй PDF-отчёт за период.',
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ],
+                  child: Text(
+                    _editingRowIndex == null
+                        ? 'Добавить расход'
+                        : 'Редактировать расход',
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 AppUi.sectionCard(
                   title: 'Период отчёта',
                   icon: Icons.calendar_month_outlined,
                   accent: const Color(0xFF06B6D4),
                   child: _periodBlock(),
                 ),
-
                 const SizedBox(height: 16),
-
                 SizedBox(
                   width: double.infinity,
                   child: GradientButton(
@@ -391,9 +582,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     onTap: _downloadPdfReport,
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 AppUi.sectionCard(
                   title: 'Тип расхода',
                   icon: Icons.tune,
@@ -418,9 +607,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 AppUi.sectionCard(
                   title: 'Сумма',
                   icon: Icons.payments_outlined,
@@ -431,9 +618,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     keyboardType: TextInputType.number,
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 AppUi.sectionCard(
                   title: 'Комментарий',
                   icon: Icons.notes,
@@ -443,9 +628,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     hint: 'Например: доставка, реклама',
                   ),
                 ),
-
                 const SizedBox(height: 16),
-
                 AppUi.sectionCard(
                   title: 'Как будет считаться',
                   icon: Icons.info_outline,
@@ -458,13 +641,15 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
                 SizedBox(
                   width: double.infinity,
                   child: GradientButton(
-                    text: _isSaving ? 'СОХРАНЯЮ...' : 'СОХРАНИТЬ РАСХОД',
+                    text: _isSaving
+                        ? 'СОХРАНЯЮ...'
+                        : _editingRowIndex != null
+                        ? 'СОХРАНИТЬ ИЗМЕНЕНИЯ'
+                        : 'СОХРАНИТЬ РАСХОД',
                     icon: Icons.save,
                     onTap: () {
                       if (_isSaving) return;
@@ -472,6 +657,35 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     },
                   ),
                 ),
+                const SizedBox(height: 28),
+                const Text(
+                  'История расходов',
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_loadingExpenses)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(30),
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                if (!_loadingExpenses && _expenses.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: AppUi.cardDecoration(radius: 24),
+                    child: const Center(
+                      child: Text(
+                        'Расходов пока нет',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  ),
+                ..._expenses.map(_expenseCard),
               ],
             ),
           ),

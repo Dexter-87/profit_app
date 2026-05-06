@@ -24,6 +24,8 @@ const EXPENSES_RANGE = 'Expenses!A:Z';
 const PLAN_RANGE = 'app_plan!A:Z';
 const DISTRIBUTION_RANGE = 'app_distribution!A:E';
 const INVESTMENTS_RANGE = 'Вложения!A:Z';
+const SIDE_INCOME_RANGE = 'ДопДоходы!A:N';
+const STOCK_RANGE = 'Остатки!A:B';
 
 const TEEG_PRICE_RANGE = 'Прайс!A:E';
 const ARISTON_PRICE_RANGE = 'Лист1!A:E';
@@ -31,6 +33,11 @@ const ARISTON_PRICE_RANGE = 'Лист1!A:E';
 const auth = new google.auth.GoogleAuth({
   keyFile: 'key.json',
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+});
+
+const sheets = google.sheets({
+  version: 'v4',
+  auth,
 });
 
 function toNumber(value) {
@@ -313,8 +320,6 @@ function getPlanValue(planRows, keywords, fallback = 0) {
   return fallback;
 }
 
-// ================= ПРАЙСЫ =================
-
 function normalizePriceRows(rows, source) {
   return rows
     .map((row) => {
@@ -338,6 +343,8 @@ function normalizePriceRows(rows, source) {
     })
     .filter((item) => item.model && item.price > 0);
 }
+
+// ================= ПРАЙСЫ =================
 
 app.get('/prices', async (req, res) => {
   try {
@@ -363,6 +370,327 @@ app.get('/prices', async (req, res) => {
       error: 'Ошибка загрузки прайсов',
       details: error.message,
     });
+  }
+});
+
+// ================= ДОП ДОХОДЫ =================
+
+app.get('/side-income', async (req, res) => {
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      range: SIDE_INCOME_RANGE,
+    });
+
+    const rows = response.data.values || [];
+    if (rows.length <= 1) {
+      return res.json([]);
+    }
+
+    const headers = rows[0];
+
+    const data = rows.slice(1).map((row, index) => {
+      const obj = {};
+      headers.forEach((header, i) => {
+        obj[header] = row[i] || '';
+      });
+
+      obj.rowIndex = index + 2;
+      return obj;
+    });
+
+    res.json(data);
+  } catch (error) {
+    console.error('Ошибка /side-income:', error);
+    res.status(500).json({ error: 'Ошибка загрузки доп. доходов' });
+  }
+});
+
+app.post('/add-side-income', async (req, res) => {
+  try {
+    const {
+      date,
+      type,
+      description,
+      income,
+      expense,
+      comment,
+      paidBy,
+    } = req.body;
+
+    const incomeNum = Number(income) || 0;
+    const expenseNum = Number(expense) || 0;
+
+    const cleanProfit = incomeNum - expenseNum;
+
+    const halfProfit = cleanProfit / 2;
+
+    let refundStas = 0;
+    let refundAlexey = 0;
+
+    if (paidBy === 'Стас') {
+      refundStas = expenseNum;
+    } else if (paidBy === 'Алексей') {
+      refundAlexey = expenseNum;
+    } else if (paidBy === 'Общий') {
+      refundStas = expenseNum / 2;
+      refundAlexey = expenseNum / 2;
+    }
+
+    const totalStas = halfProfit + refundStas;
+    const totalAlexey = halfProfit + refundAlexey;
+
+    const values = [[
+      date || todayRu(),
+      type || '',
+      description || '',
+      incomeNum,
+      expenseNum,
+      cleanProfit,
+      halfProfit,
+      halfProfit,
+      comment || '',
+      paidBy || '',
+      refundStas,
+      refundAlexey,
+      totalStas,
+      totalAlexey,
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      range: 'ДопДоходы!A:N',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Доп. доход добавлен',
+    });
+  } catch (error) {
+
+    console.error('Ошибка /add-side-income:', error);
+    res.status(500).json({ error: 'Ошибка добавления доп. дохода' });
+  }
+});
+
+app.put('/expenses/:rowIndex', async (req, res) => {
+  try {
+    const rowIndex = Number(req.params.rowIndex);
+    const { amount, owner, type, comment } = req.body;
+
+    if (!rowIndex || rowIndex < 2) {
+      return res.status(400).json({ error: 'Неверный номер строки' });
+    }
+
+    const sheetsApi = await getSheetsApi();
+
+    await sheetsApi.spreadsheets.values.update({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      range: `Expenses!A${rowIndex}:J${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[
+          todayRu(),
+          type || '',
+          amount || '',
+          '',
+          '',
+          '',
+          '',
+          owner || '',
+          type || '',
+          comment || '',
+        ]],
+      },
+    });
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Ошибка PUT /expenses:', error);
+    res.status(500).json({
+      error: 'Ошибка обновления расхода',
+      details: error.message,
+    });
+  }
+});
+
+app.delete('/expenses/:rowIndex', async (req, res) => {
+  try {
+    const rowIndex = Number(req.params.rowIndex);
+
+    if (!rowIndex || rowIndex < 2) {
+      return res.status(400).json({ error: 'Неверный номер строки' });
+    }
+
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+    });
+
+    const sheet = spreadsheet.data.sheets.find(
+      (s) => s.properties.title === 'Expenses'
+    );
+
+    if (!sheet) {
+      return res.status(404).json({ error: 'Лист Expenses не найден' });
+    }
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheet.properties.sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex - 1,
+                endIndex: rowIndex,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Ошибка DELETE /expenses:', error);
+    res.status(500).json({
+      error: 'Ошибка удаления расхода',
+      details: error.message,
+    });
+  }
+});
+
+
+app.put('/side-income/:rowIndex', async (req, res) => {
+  try {
+    const rowIndex = Number(req.params.rowIndex);
+
+    if (!rowIndex || rowIndex < 2) {
+      return res.status(400).json({ error: 'Неверный номер строки' });
+    }
+
+    const {
+      date,
+      type,
+      description,
+      income,
+      expense,
+      comment,
+      paidBy,
+    } = req.body;
+
+    const incomeNum = Number(income) || 0;
+    const expenseNum = Number(expense) || 0;
+
+    const cleanProfit = incomeNum - expenseNum;
+
+    const halfProfit = cleanProfit / 2;
+
+    let refundStas = 0;
+    let refundAlexey = 0;
+
+    if (paidBy === 'Стас') {
+      refundStas = expenseNum;
+    } else if (paidBy === 'Алексей') {
+      refundAlexey = expenseNum;
+    } else if (paidBy === 'Общий') {
+      refundStas = expenseNum / 2;
+      refundAlexey = expenseNum / 2;
+    }
+
+    const totalStas = halfProfit + refundStas;
+    const totalAlexey = halfProfit + refundAlexey;
+
+    const values = [[
+      date || todayRu(),
+      type || '',
+      description || '',
+      incomeNum,
+      expenseNum,
+      cleanProfit,
+      halfProfit,
+      halfProfit,
+      comment || '',
+      paidBy || '',
+      refundStas,
+      refundAlexey,
+      totalStas,
+      totalAlexey,
+    ]];
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      range: `ДопДоходы!A${rowIndex}:N${rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Доп. доход обновлен',
+    });
+  } catch (error) {
+
+    console.error('Ошибка PUT /side-income:', error);
+    res.status(500).json({ error: 'Ошибка обновления доп. дохода' });
+  }
+});
+
+app.delete('/side-income/:rowIndex', async (req, res) => {
+  try {
+    const rowIndex = Number(req.params.rowIndex);
+
+    if (!rowIndex || rowIndex < 2) {
+      return res.status(400).json({ error: 'Неверный номер строки' });
+    }
+
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+    });
+
+    const sheet = spreadsheet.data.sheets.find(
+      (s) => s.properties.title === 'ДопДоходы'
+    );
+
+    if (!sheet) {
+      return res.status(404).json({ error: 'Лист ДопДоходы не найден' });
+    }
+
+    const sheetId = sheet.properties.sheetId;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex - 1,
+                endIndex: rowIndex,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Доп. доход удален',
+    });
+  } catch (error) {
+    console.error('Ошибка DELETE /side-income:', error);
+    res.status(500).json({ error: 'Ошибка удаления доп. дохода' });
   }
 });
 
@@ -399,7 +727,6 @@ app.get('/sales', async (req, res) => {
     });
   }
 });
-
 app.post('/add-sale', async (req, res) => {
   try {
     const {
@@ -529,9 +856,7 @@ app.post('/delete-sale', async (req, res) => {
       spreadsheetId: SALES_SPREADSHEET_ID,
     });
 
-    const sheet = meta.data.sheets.find(
-      (s) => s.properties.title === 'Лист1'
-    );
+    const sheet = meta.data.sheets.find((s) => s.properties.title === 'Лист1');
 
     if (!sheet) {
       return res.status(400).json({ error: 'Лист1 не найден' });
@@ -619,8 +944,6 @@ app.post('/expenses', async (req, res) => {
 });
 
 // ================= ОСТАТКИ =================
-
-const STOCK_RANGE = 'Остатки!A:B';
 
 app.get('/stock', async (req, res) => {
   try {
@@ -753,234 +1076,314 @@ app.get('/investments', async (req, res) => {
   }
 });
 
+// ================= ОБЩАЯ ФУНКЦИЯ АНАЛИТИКИ =================
+
+async function calculateAnalytics(req, topLimit = 5) {
+  const dateFrom = req.query.dateFrom || req.query.date_from || req.query.datefrom;
+  const dateTo = req.query.dateTo || req.query.date_to || req.query.dateto;
+
+  const selectedModel = String(
+    req.query.model || req.query.workModel || req.query.selectedModel || 'current'
+  ).trim();
+
+  const from = dateFrom ? parseDate(dateFrom) : null;
+  const to = dateTo ? parseDate(dateTo) : null;
+
+  const salesRows = await getRowsFromSpreadsheet(SALES_SPREADSHEET_ID, SALES_RANGE);
+  const expenseRows = await getRows(EXPENSES_RANGE);
+  const distributionRows = await getRows(DISTRIBUTION_RANGE);
+  const planRows = await getRows(PLAN_RANGE);
+  const sideIncomeRows = await getRows(SIDE_INCOME_RANGE);
+
+  const capitalWorkShares = getCapitalWorkShares(distributionRows);
+
+  let revenue = 0;
+  let totalProfit = 0;
+  let myProfit = 0;
+  let alexProfit = 0;
+
+  let kaspiRevenue = 0;
+  let kaspiProfit = 0;
+  let kaspiCount = 0;
+
+  let optRevenue = 0;
+  let optProfit = 0;
+  let optCount = 0;
+
+  let salesCount = 0;
+
+  let sideIncomeTotal = 0;
+  let sideIncomeExpense = 0;
+  let sideIncomeProfit = 0;
+  let sideIncomeStas = 0;
+  let sideIncomeAlexey = 0;
+
+  const topMap = {};
+  const dailyMap = {};
+  const brandMap = {};
+  const clientMap = {};
+  const sideIncomeItems = [];
+
+  for (const row of salesRows) {
+    if ((from || to) && !rowInPeriod(getRowDate(row), from, to)) continue;
+
+    const name = cleanProductName(getCell(row, ['Наименование', 'Товар', 'name'], 2));
+    const channel = getChannel(row);
+    const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
+    const client = String(getCell(row, ['Клиент', 'client'], 13)).trim() || 'Без клиента';
+
+    const rrc = toNumber(getCell(row, ['РРЦ', 'Выручка', 'Цена', 'price'], 5));
+    const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
+    const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
+
+    const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7));
+    const profit = profitFromSheet !== 0 ? profitFromSheet : rrc - cost - commission;
+
+    const shares = selectedModel === 'capital_work'
+      ? {
+          stasShare: capitalWorkShares.stasShare,
+          alexShare: capitalWorkShares.alexShare,
+        }
+      : getCurrentModelShares(row, name, comment);
+
+    const rowMyProfit = profit * shares.stasShare;
+    const rowAlexProfit = profit * shares.alexShare;
+
+    revenue += rrc;
+    totalProfit += profit;
+    myProfit += rowMyProfit;
+    alexProfit += rowAlexProfit;
+    salesCount++;
+
+    if (channel === 'Каспий') {
+      kaspiRevenue += rrc;
+      kaspiProfit += profit;
+      kaspiCount++;
+    } else {
+      optRevenue += rrc;
+      optProfit += profit;
+      optCount++;
+    }
+
+    if (name) {
+      topMap[name] = (topMap[name] || 0) + profit;
+    }
+
+    const dateKey = String(getRowDate(row)).trim();
+    if (dateKey) {
+      dailyMap[dateKey] = (dailyMap[dateKey] || 0) + profit;
+    }
+
+    const brand = detectBrand(name);
+
+    if (!brandMap[brand]) {
+      brandMap[brand] = {
+        brand,
+        revenue: 0,
+        profit: 0,
+        myProfit: 0,
+        alexProfit: 0,
+        count: 0,
+      };
+    }
+
+    brandMap[brand].revenue += rrc;
+    brandMap[brand].profit += profit;
+    brandMap[brand].myProfit += rowMyProfit;
+    brandMap[brand].alexProfit += rowAlexProfit;
+    brandMap[brand].count++;
+
+    if (!clientMap[client]) {
+      clientMap[client] = {
+        client,
+        revenue: 0,
+        profit: 0,
+        myProfit: 0,
+        alexProfit: 0,
+        count: 0,
+      };
+    }
+
+    clientMap[client].revenue += rrc;
+    clientMap[client].profit += profit;
+    clientMap[client].myProfit += rowMyProfit;
+    clientMap[client].alexProfit += rowAlexProfit;
+    clientMap[client].count++;
+  }
+
+  let expenses = 0;
+
+  for (const row of expenseRows) {
+    const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
+    if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
+
+    expenses += toNumber(getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2));
+  }
+
+  for (const row of sideIncomeRows) {
+    const rawDate = getCell(row, ['Дата', 'date'], 0);
+    if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
+
+    const type = String(getCell(row, ['Тип', 'type'], 1)).trim();
+    const description = String(getCell(row, ['Описание', 'description'], 2)).trim();
+    const income = toNumber(getCell(row, ['Доход', 'income'], 3));
+    const expense = toNumber(getCell(row, ['Расход', 'expense'], 4));
+
+    const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'profit'], 5));
+    const profit = profitFromSheet !== 0 ? profitFromSheet : income - expense;
+
+    const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
+
+    const paidBy = String(
+      getCell(row, ['Оплатил расход', 'Кто оплатил', 'Оплатил', 'paidBy'], 9)
+    ).trim();
+
+    const refundStas = toNumber(
+      getCell(row, ['Возврат Стас', 'Возврат Стасу', 'refundStas'], 10)
+    );
+
+    const refundAlexey = toNumber(
+      getCell(row, ['Возврат Алексей', 'Возврат Алексею', 'refundAlexey'], 11)
+    );
+
+    const totalStas = toNumber(
+      getCell(row, ['Итого Стас', 'totalStas'], 12)
+    );
+
+    const totalAlexey = toNumber(
+      getCell(row, ['Итого Алексей', 'totalAlexey'], 13)
+    );
+
+    sideIncomeTotal += income;
+    sideIncomeExpense += expense;
+    sideIncomeProfit += profit;
+
+    sideIncomeStas += totalStas || profit / 2 + refundStas;
+    sideIncomeAlexey += totalAlexey || profit / 2 + refundAlexey;
+
+    sideIncomeItems.push({
+      date: rawDate,
+      type,
+      description,
+      income,
+      expense,
+      profit,
+      comment,
+      paidBy,
+      refundStas,
+      refundAlexey,
+      totalStas: totalStas || profit / 2 + refundStas,
+      totalAlexey: totalAlexey || profit / 2 + refundAlexey,
+    });
+  }
+
+  const netProfit = totalProfit - expenses;
+
+  let myNet = 0;
+  let alexNet = 0;
+
+  if (selectedModel === 'capital_work') {
+    myProfit = netProfit * capitalWorkShares.stasShare;
+    alexProfit = netProfit * capitalWorkShares.alexShare;
+
+    myNet = myProfit;
+    alexNet = alexProfit;
+  } else {
+    myNet = myProfit - expenses / 2;
+    alexNet = alexProfit - expenses / 2;
+  }
+
+  const totalNetWithSideIncome = netProfit + sideIncomeProfit;
+  const myNetWithSideIncome = myNet + sideIncomeStas;
+  const alexNetWithSideIncome = alexNet + sideIncomeAlexey;
+
+  const avgCheck = salesCount > 0 ? revenue / salesCount : 0;
+  const avgProfit = salesCount > 0 ? totalProfit / salesCount : 0;
+  const margin = revenue > 0 ? (totalProfit / revenue) * 100 : 0;
+
+  const topProducts = Object.entries(topMap)
+    .map(([name, profit]) => ({ name, profit }))
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, topLimit);
+
+  const dailyProfit = Object.entries(dailyMap)
+    .map(([date, profit]) => ({ date, profit }))
+    .sort((a, b) => {
+      const da = parseDate(a.date);
+      const db = parseDate(b.date);
+      if (!da || !db) return 0;
+      return da - db;
+    });
+
+  const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
+  const clients = Object.values(clientMap).sort((a, b) => b.profit - a.profit);
+
+  const stasPlan = getPlanValue(planRows, ['стас'], 800000);
+  const alexPlan = getPlanValue(planRows, ['алексей'], 800000);
+  const revenuePlan = getPlanValue(planRows, ['выруч'], 10000000);
+  const profitPlan = getPlanValue(planRows, ['приб'], 800000);
+
+  return {
+    dateFrom,
+    dateTo,
+    selectedModel,
+    model: selectedModel,
+
+    revenue,
+    totalProfit,
+    netProfit,
+
+    myProfit,
+    alexProfit,
+    expenses,
+    myNet,
+    alexNet,
+
+    sideIncomeTotal,
+    sideIncomeExpense,
+    sideIncomeProfit,
+    sideIncomeStas,
+    sideIncomeAlexey,
+    sideIncomeItems,
+
+    totalNetWithSideIncome,
+    myNetWithSideIncome,
+    alexNetWithSideIncome,
+
+    salesCount,
+    avgCheck,
+    avgProfit,
+    margin,
+
+    kaspiRevenue,
+    kaspiProfit,
+    kaspiCount,
+
+    optRevenue,
+    optProfit,
+    optCount,
+
+    topProducts,
+    dailyProfit,
+    brands,
+    clients,
+
+    revenuePlan,
+    profitPlan,
+    stasPlan,
+    alexPlan,
+
+    capitalWorkShares,
+  };
+}
+
+
 // ================= АНАЛИТИКА =================
 
 app.get('/analytics', async (req, res) => {
   try {
-    const dateFrom = req.query.dateFrom || req.query.date_from || req.query.datefrom;
-    const dateTo = req.query.dateTo || req.query.date_to || req.query.dateto;
-
-    const selectedModel = String(
-      req.query.model || req.query.workModel || req.query.selectedModel || 'current'
-    ).trim();
-
-    const from = dateFrom ? parseDate(dateFrom) : null;
-    const to = dateTo ? parseDate(dateTo) : null;
-
-    const salesRows = await getRowsFromSpreadsheet(
-      SALES_SPREADSHEET_ID,
-      SALES_RANGE
-    );
-
-    const expenseRows = await getRows(EXPENSES_RANGE);
-    const distributionRows = await getRows(DISTRIBUTION_RANGE);
-    const planRows = await getRows(PLAN_RANGE);
-
-    const capitalWorkShares = getCapitalWorkShares(distributionRows);
-
-    let revenue = 0;
-    let totalProfit = 0;
-    let myProfit = 0;
-    let alexProfit = 0;
-
-    let kaspiRevenue = 0;
-    let kaspiProfit = 0;
-    let kaspiCount = 0;
-
-    let optRevenue = 0;
-    let optProfit = 0;
-    let optCount = 0;
-
-    let salesCount = 0;
-
-    const topMap = {};
-    const dailyMap = {};
-    const brandMap = {};
-    const clientMap = {};
-
-    for (const row of salesRows) {
-      if ((from || to) && !rowInPeriod(getRowDate(row), from, to)) continue;
-
-      const name = cleanProductName(getCell(row, ['Наименование', 'Товар', 'name'], 2));
-      const channel = getChannel(row);
-      const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
-      const client = String(getCell(row, ['Клиент', 'client'], 13)).trim();
-
-      const rrc = toNumber(getCell(row, ['РРЦ', 'Выручка', 'Цена', 'price'], 5));
-      const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
-      const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
-
-      const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7));
-      const profit = profitFromSheet !== 0 ? profitFromSheet : rrc - cost - commission;
-
-      let shares;
-
-      if (selectedModel === 'capital_work') {
-        shares = {
-          stasShare: capitalWorkShares.stasShare,
-          alexShare: capitalWorkShares.alexShare,
-        };
-      } else {
-        shares = getCurrentModelShares(row, name, comment);
-      }
-
-      const rowMyProfit = profit * shares.stasShare;
-      const rowAlexProfit = profit * shares.alexShare;
-
-      revenue += rrc;
-      totalProfit += profit;
-      myProfit += rowMyProfit;
-      alexProfit += rowAlexProfit;
-      salesCount++;
-
-      if (channel === 'Каспий') {
-        kaspiRevenue += rrc;
-        kaspiProfit += profit;
-        kaspiCount++;
-      } else {
-        optRevenue += rrc;
-        optProfit += profit;
-        optCount++;
-      }
-
-      if (name) {
-        topMap[name] = (topMap[name] || 0) + profit;
-      }
-
-      const dateKey = String(getRowDate(row)).trim();
-      if (dateKey) {
-        dailyMap[dateKey] = (dailyMap[dateKey] || 0) + profit;
-      }
-
-      const brand = detectBrand(name);
-
-      if (!brandMap[brand]) {
-        brandMap[brand] = {
-          brand,
-          revenue: 0,
-          profit: 0,
-          myProfit: 0,
-          alexProfit: 0,
-          count: 0,
-        };
-      }
-
-      brandMap[brand].revenue += rrc;
-      brandMap[brand].profit += profit;
-      brandMap[brand].myProfit += rowMyProfit;
-      brandMap[brand].alexProfit += rowAlexProfit;
-      brandMap[brand].count++;
-
-      if (client) {
-        if (!clientMap[client]) {
-          clientMap[client] = {
-            client,
-            revenue: 0,
-            profit: 0,
-            myProfit: 0,
-            alexProfit: 0,
-            count: 0,
-          };
-        }
-
-        clientMap[client].revenue += rrc;
-        clientMap[client].profit += profit;
-        clientMap[client].myProfit += rowMyProfit;
-        clientMap[client].alexProfit += rowAlexProfit;
-        clientMap[client].count++;
-      }
-    }
-
-    let expenses = 0;
-
-    for (const row of expenseRows) {
-      const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
-
-      if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
-
-      expenses += toNumber(getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2));
-    }
-
-    const netProfit = totalProfit - expenses;
-
-    let myNet = 0;
-    let alexNet = 0;
-
-    if (selectedModel === 'capital_work') {
-      myProfit = netProfit * capitalWorkShares.stasShare;
-      alexProfit = netProfit * capitalWorkShares.alexShare;
-
-      myNet = myProfit;
-      alexNet = alexProfit;
-    } else {
-      myNet = myProfit - expenses / 2;
-      alexNet = alexProfit - expenses / 2;
-    }
-
-    const avgCheck = salesCount > 0 ? revenue / salesCount : 0;
-    const avgProfit = salesCount > 0 ? totalProfit / salesCount : 0;
-    const margin = revenue > 0 ? (totalProfit / revenue) * 100 : 0;
-
-    const topProducts = Object.entries(topMap)
-      .map(([name, profit]) => ({ name, profit }))
-      .sort((a, b) => b.profit - a.profit)
-      .slice(0, 5);
-
-    const dailyProfit = Object.entries(dailyMap)
-      .map(([date, profit]) => ({ date, profit }))
-      .sort((a, b) => {
-        const da = parseDate(a.date);
-        const db = parseDate(b.date);
-        if (!da || !db) return 0;
-        return da - db;
-      });
-
-    const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
-    const clients = Object.values(clientMap).sort((a, b) => b.profit - a.profit);
-
-    const stasPlan = getPlanValue(planRows, ['стас'], 800000);
-    const alexPlan = getPlanValue(planRows, ['алексей'], 800000);
-    const revenuePlan = getPlanValue(planRows, ['выруч'], 10000000);
-    const profitPlan = getPlanValue(planRows, ['приб'], 800000);
-
-    res.json({
-      model: selectedModel,
-
-      revenue,
-      totalProfit,
-      netProfit,
-
-      myProfit,
-      alexProfit,
-      expenses,
-      myNet,
-      alexNet,
-
-      salesCount,
-      avgCheck,
-      avgProfit,
-      margin,
-
-      kaspiRevenue,
-      kaspiProfit,
-      kaspiCount,
-
-      optRevenue,
-      optProfit,
-      optCount,
-
-      topProducts,
-      dailyProfit,
-      brands,
-      clients,
-
-      revenuePlan,
-      profitPlan,
-      stasPlan,
-      alexPlan,
-
-      capitalWorkShares,
-    });
+    const data = await calculateAnalytics(req, 5);
+    res.json(data);
   } catch (error) {
     console.error('Ошибка /analytics:', error);
 
@@ -1191,6 +1594,53 @@ app.post('/invoice-pdf', (req, res) => {
   }
 });
 
+// ================= PDF HELPERS =================
+
+async function buildAnalyticsReportData(req) {
+  return calculateAnalytics(req, 10);
+}
+
+function setupPdf(res, filename) {
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+  const fontPath = 'C:/Windows/Fonts/arial.ttf';
+  if (fs.existsSync(fontPath)) {
+    doc.font(fontPath);
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+  doc.pipe(res);
+  return doc;
+}
+
+function pdfHeader(doc, title, data) {
+  doc.fontSize(22).text('TechnoOpt', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(18).text(title, { align: 'center' });
+  doc.moveDown();
+
+  doc.fontSize(11).text(`Период: ${data.dateFrom || '—'} - ${data.dateTo || '—'}`);
+  doc.text(
+    `Модель: ${
+      data.selectedModel === 'capital_work'
+        ? 'Капитал + работа'
+        : 'Текущая'
+    }`
+  );
+  doc.moveDown();
+}
+
+function checkPage(doc, y) {
+  if (y > 740) {
+    doc.addPage();
+    return 40;
+  }
+
+  return y;
+}
+
 // ================= PDF ОТЧЁТ ПО РАСХОДАМ =================
 
 app.get('/expenses-report/pdf', async (req, res) => {
@@ -1298,240 +1748,6 @@ app.get('/expenses-report/pdf', async (req, res) => {
   }
 });
 
-// ================= PDF ОТЧЁТЫ АНАЛИТИКИ =================
-
-async function buildAnalyticsReportData(req) {
-  const dateFrom = req.query.dateFrom || req.query.date_from || req.query.datefrom;
-  const dateTo = req.query.dateTo || req.query.date_to || req.query.dateto;
-
-  const selectedModel = String(
-    req.query.model || req.query.workModel || req.query.selectedModel || 'current'
-  ).trim();
-
-  const from = dateFrom ? parseDate(dateFrom) : null;
-  const to = dateTo ? parseDate(dateTo) : null;
-
-  const salesRows = await getRowsFromSpreadsheet(
-    SALES_SPREADSHEET_ID,
-    SALES_RANGE
-  );
-
-  const expenseRows = await getRows(EXPENSES_RANGE);
-  const distributionRows = await getRows(DISTRIBUTION_RANGE);
-
-  const capitalWorkShares = getCapitalWorkShares(distributionRows);
-
-  let revenue = 0;
-  let totalProfit = 0;
-  let myProfit = 0;
-  let alexProfit = 0;
-
-  let kaspiRevenue = 0;
-  let kaspiProfit = 0;
-  let kaspiCount = 0;
-
-  let optRevenue = 0;
-  let optProfit = 0;
-  let optCount = 0;
-
-  let salesCount = 0;
-
-  const topMap = {};
-  const brandMap = {};
-  const clientMap = {};
-
-  for (const row of salesRows) {
-    if ((from || to) && !rowInPeriod(getRowDate(row), from, to)) continue;
-
-    const name = cleanProductName(getCell(row, ['Наименование', 'Товар', 'name'], 2));
-    const channel = getChannel(row);
-    const comment = String(getCell(row, ['Комментарий', 'comment'], 8)).trim();
-    const client = String(getCell(row, ['Клиент', 'client'], 13)).trim() || 'Без клиента';
-
-    const rrc = toNumber(getCell(row, ['РРЦ', 'Выручка', 'Цена', 'price'], 5));
-    const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
-    const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
-
-    const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7));
-    const profit = profitFromSheet !== 0 ? profitFromSheet : rrc - cost - commission;
-
-    let shares;
-
-    if (selectedModel === 'capital_work') {
-      shares = {
-        stasShare: capitalWorkShares.stasShare,
-        alexShare: capitalWorkShares.alexShare,
-      };
-    } else {
-      shares = getCurrentModelShares(row, name, comment);
-    }
-
-    const rowMyProfit = profit * shares.stasShare;
-    const rowAlexProfit = profit * shares.alexShare;
-
-    revenue += rrc;
-    totalProfit += profit;
-    myProfit += rowMyProfit;
-    alexProfit += rowAlexProfit;
-    salesCount++;
-
-    if (channel === 'Каспий') {
-      kaspiRevenue += rrc;
-      kaspiProfit += profit;
-      kaspiCount++;
-    } else {
-      optRevenue += rrc;
-      optProfit += profit;
-      optCount++;
-    }
-
-    if (name) {
-      topMap[name] = (topMap[name] || 0) + profit;
-    }
-
-    const brand = detectBrand(name);
-
-    if (!brandMap[brand]) {
-      brandMap[brand] = {
-        brand,
-        revenue: 0,
-        profit: 0,
-        myProfit: 0,
-        alexProfit: 0,
-        count: 0,
-      };
-    }
-
-    brandMap[brand].revenue += rrc;
-    brandMap[brand].profit += profit;
-    brandMap[brand].myProfit += rowMyProfit;
-    brandMap[brand].alexProfit += rowAlexProfit;
-    brandMap[brand].count++;
-
-    if (!clientMap[client]) {
-      clientMap[client] = {
-        client,
-        revenue: 0,
-        profit: 0,
-        myProfit: 0,
-        alexProfit: 0,
-        count: 0,
-      };
-    }
-
-    clientMap[client].revenue += rrc;
-    clientMap[client].profit += profit;
-    clientMap[client].myProfit += rowMyProfit;
-    clientMap[client].alexProfit += rowAlexProfit;
-    clientMap[client].count++;
-  }
-
-  let expenses = 0;
-
-  for (const row of expenseRows) {
-    const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
-    if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
-
-    expenses += toNumber(getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2));
-  }
-
-  const netProfit = totalProfit - expenses;
-
-  let myNet = 0;
-  let alexNet = 0;
-
-  if (selectedModel === 'capital_work') {
-    myProfit = netProfit * capitalWorkShares.stasShare;
-    alexProfit = netProfit * capitalWorkShares.alexShare;
-
-    myNet = myProfit;
-    alexNet = alexProfit;
-  } else {
-    myNet = myProfit - expenses / 2;
-    alexNet = alexProfit - expenses / 2;
-  }
-
-  const avgCheck = salesCount > 0 ? revenue / salesCount : 0;
-  const avgProfit = salesCount > 0 ? totalProfit / salesCount : 0;
-  const margin = revenue > 0 ? (totalProfit / revenue) * 100 : 0;
-
-  const topProducts = Object.entries(topMap)
-    .map(([name, profit]) => ({ name, profit }))
-    .sort((a, b) => b.profit - a.profit)
-    .slice(0, 10);
-
-  const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
-  const clients = Object.values(clientMap).sort((a, b) => b.profit - a.profit);
-
-  return {
-    dateFrom,
-    dateTo,
-    selectedModel,
-    revenue,
-    totalProfit,
-    expenses,
-    netProfit,
-    myProfit,
-    alexProfit,
-    myNet,
-    alexNet,
-    salesCount,
-    avgCheck,
-    avgProfit,
-    margin,
-    kaspiRevenue,
-    kaspiProfit,
-    kaspiCount,
-    optRevenue,
-    optProfit,
-    optCount,
-    topProducts,
-    brands,
-    clients,
-  };
-}
-
-function setupPdf(res, filename) {
-  const doc = new PDFDocument({ margin: 40, size: 'A4' });
-
-  const fontPath = 'C:/Windows/Fonts/arial.ttf';
-  if (fs.existsSync(fontPath)) {
-    doc.font(fontPath);
-  }
-
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
-
-  doc.pipe(res);
-  return doc;
-}
-
-function pdfHeader(doc, title, data) {
-  doc.fontSize(22).text('TechnoOpt', { align: 'center' });
-  doc.moveDown(0.3);
-  doc.fontSize(18).text(title, { align: 'center' });
-  doc.moveDown();
-
-  doc.fontSize(11).text(`Период: ${data.dateFrom || '—'} - ${data.dateTo || '—'}`);
-  doc.text(
-    `Модель: ${
-      data.selectedModel === 'capital_work'
-        ? 'Капитал + работа'
-        : 'Текущая'
-    }`
-  );
-  doc.moveDown();
-}
-
-function checkPage(doc, y) {
-  if (y > 740) {
-    doc.addPage();
-    return 40;
-  }
-
-  return y;
-}
-
 // ===== ОБЩИЙ ОТЧЁТ БИЗНЕСА =====
 
 app.get('/business-report/pdf', async (req, res) => {
@@ -1558,6 +1774,70 @@ app.get('/business-report/pdf', async (req, res) => {
 
     doc.moveDown();
 
+    doc.fontSize(13).text('Доп. доходы 50/50');
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+
+    doc.text(`Доход: ${money(data.sideIncomeTotal || 0)}`);
+    doc.text(`Расход: ${money(data.sideIncomeExpense || 0)}`);
+    doc.text(`Общая чистая прибыль: ${money(data.sideIncomeProfit || 0)}`);
+    doc.text(`Стас: ${money(data.sideIncomeStas || 0)}`);
+    doc.text(`Алексей: ${money(data.sideIncomeAlexey || 0)}`);
+
+    if (Array.isArray(data.sideIncomeItems) && data.sideIncomeItems.length > 0) {
+      doc.moveDown(0.5);
+      doc.text('Расшифровка доп. доходов:');
+
+      data.sideIncomeItems.forEach((item, index) => {
+        doc.text(
+          `${index + 1}. ${item.date || ''} / ${item.type || 'Без типа'} / ${item.description || ''}`
+        );
+
+        doc.text(
+          `   Доход: ${money(item.income)} / Расход: ${money(item.expense)} / Чистая: ${money(item.profit)}`
+        );
+
+        doc.text(
+          `   Оплатил расход: ${item.paidBy || 'Не указано'}`
+        );
+
+        doc.text(
+          `   Возврат: Стас ${money(item.refundStas || 0)} / Алексей ${money(item.refundAlexey || 0)}`
+        );
+
+        doc.text(
+          `   Итого: Стас ${money(item.totalStas || 0)} / Алексей ${money(item.totalAlexey || 0)}`
+        );
+
+        if (item.comment) {
+          doc.text(`   Комментарий: ${item.comment}`);
+        }
+
+        doc.moveDown(0.3);
+      });
+    }
+
+    doc.moveDown();
+
+
+    doc.fontSize(13).text('Итог с доп. доходами');
+    doc.moveDown(0.5);
+
+    doc.fontSize(11);
+    doc.text(`Стас по бизнесу: ${money(data.myNet || 0)}`);
+    doc.text(`Доп. доход Стаса: ${money(data.sideIncomeStas || 0)}`);
+    doc.fontSize(12).text(`Стас итог: ${money(data.myNetWithSideIncome || data.myNet || 0)}`);
+
+    doc.moveDown(0.4);
+
+    doc.fontSize(11);
+    doc.text(`Алексей по бизнесу: ${money(data.alexNet || 0)}`);
+    doc.text(`Доп. доход Алексея: ${money(data.sideIncomeAlexey || 0)}`);
+    doc.fontSize(12).text(`Алексей итог: ${money(data.alexNetWithSideIncome || data.alexNet || 0)}`);
+
+
+    doc.moveDown();
+
     doc.fontSize(13).text('Каналы');
     doc.moveDown(0.5);
     doc.fontSize(11);
@@ -1566,21 +1846,11 @@ app.get('/business-report/pdf', async (req, res) => {
 
     doc.moveDown();
 
-    doc.fontSize(13).text('Топ товаров по прибыли');
-    doc.moveDown(0.5);
-
-    let y = doc.y;
-
-    data.topProducts.forEach((item, index) => {
-      y = checkPage(doc, y);
-      doc.text(`${index + 1}. ${cleanProductName(item.name)}`, 40, y, { width: 360 });
-      doc.text(money(item.profit), 430, y);
-      y += 24;
-    });
 
     doc.end();
   } catch (error) {
     console.error('Ошибка /business-report/pdf:', error);
+
     res.status(500).json({
       error: 'Ошибка PDF бизнес-отчёта',
       details: error.message,
@@ -1627,8 +1897,16 @@ app.get('/clients-report/pdf', async (req, res) => {
     doc.moveTo(40, y).lineTo(555, y).stroke();
     y += 18;
 
-    doc.fontSize(13).text(`ИТОГО выручка: ${money(data.revenue)}`);
-    doc.text(`ИТОГО прибыль: ${money(data.totalProfit)}`);
+    doc.fontSize(12);
+
+    doc.text('ИТОГО выручка:', 330, y, { width: 120 });
+    doc.text(money(data.revenue), 455, y, { width: 90 });
+
+    y += 18;
+
+    doc.text('ИТОГО прибыль:', 330, y, { width: 120 });
+    doc.text(money(data.totalProfit), 455, y, { width: 90 });
+
 
     doc.end();
   } catch (error) {
@@ -1834,7 +2112,7 @@ app.get('/stock-report/pdf', async (req, res) => {
       details: error.message,
     });
   }
-});
+  });
 
 app.listen(PORT, () => {
   console.log(`Server started on http://localhost:${PORT}`);

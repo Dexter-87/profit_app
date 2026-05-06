@@ -151,6 +151,96 @@ class ApiService {
 
     if (response.statusCode != 200) {
       throw Exception('Ошибка сохранения распределения: ${response.body}');
+
+
+    }
+  }
+
+  static Future<List<dynamic>> getSideIncome() async {
+    final response = await http.get(Uri.parse('$baseUrl/side-income'));
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Ошибка загрузки доп. доходов');
+    }
+  }
+
+  static Future<bool> updateSideIncome({
+    required int rowIndex,
+    required String date,
+    required String type,
+    required String description,
+    required double income,
+    required double expense,
+    required String comment,
+    required String paidBy,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/side-income/$rowIndex'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'date': date,
+        'type': type,
+        'description': description,
+        'income': income,
+        'expense': expense,
+        'comment': comment,
+        'paidBy': paidBy,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      throw Exception('Ошибка обновления доп. дохода');
+    }
+  }
+
+
+  static Future<bool> addSideIncome({
+    required String date,
+    required String type,
+    required String description,
+    required double income,
+    required double expense,
+    required String comment,
+    required String paidBy,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/add-side-income'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'date': date,
+        'type': type,
+        'description': description,
+        'income': income,
+        'expense': expense,
+        'comment': comment,
+        'paidBy': paidBy,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      throw Exception('Ошибка добавления доп. дохода');
+    }
+  }
+    static Future<bool> deleteSideIncome({
+    required int rowIndex,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/side-income/$rowIndex'),
+    );
+
+    if (response.statusCode == 200) {
+      return true;
+    } else {
+      throw Exception('Ошибка удаления доп. дохода');
     }
   }
 }
+
+
+

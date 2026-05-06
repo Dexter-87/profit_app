@@ -1059,6 +1059,24 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 const SizedBox(height: 16),
 
                 AppUi.sectionCard(
+                  title: 'Доп. доходы 50/50',
+                  icon: Icons.handshake_outlined,
+                  accent: const Color(0xFF06B6D4),
+                  child: Column(
+                    children: [
+                      _statRow('Доход', _formatMoney(_data['sideIncomeTotal'])),
+                      _statRow('Расход', _formatMoney(_data['sideIncomeExpense'])),
+                      _statRow('Чистая прибыль', _formatMoney(_data['sideIncomeProfit']), bold: true),
+                      const Divider(color: AppColors.stroke, height: 24),
+                      _statRow('Стас', _formatMoney(_data['sideIncomeStas']), bold: true),
+                      _statRow('Алексей', _formatMoney(_data['sideIncomeAlexey']), bold: true),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                AppUi.sectionCard(
                   title: 'Топ-5 товаров по прибыли',
                   icon: Icons.workspace_premium_outlined,
                   accent: const Color(0xFF8B5CF6),

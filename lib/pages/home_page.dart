@@ -10,6 +10,7 @@ import 'sales_page.dart';
 import 'analytics_page.dart';
 import 'create_order_page.dart';
 import 'expenses_page.dart';
+import 'side_income_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -955,6 +956,45 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: AppUi.metricCard(
+                      icon: Icons.handshake_outlined,
+                      title: 'Доп. доходы',
+                      value: _formatMoney(
+                        _toDouble(_analytics?['sideIncomeProfit']),
+                      ),
+                      accentColors: const [
+                        Color(0xFF06B6D4),
+                        Color(0xFF0891B2),
+                      ],
+                      compact: true,
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: AppUi.metricCard(
+                      icon: Icons.groups_outlined,
+                      title: 'Общий итог',
+                      value: _formatMoney(
+                        _toDouble(_analytics?['myNetWithSideIncome']) +
+                            _toDouble(_analytics?['alexNetWithSideIncome']),
+                      ),
+                      accentColors: const [
+                        Color(0xFF8B5CF6),
+                        Color(0xFF6D28D9),
+                      ],
+                      compact: true,
+                    ),
+                  ),
+                ],
+              ),
+
               const SizedBox(height: 16),
               AppUi.sectionCard(
                 title: 'Быстрые действия',
@@ -1015,6 +1055,24 @@ class _HomePageState extends State<HomePage> {
                           ],
                           page: const AnalyticsPage(),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _quickActionCard(
+                          context: context,
+                          title: 'Доп. доходы',
+                          subtitle: 'Доходы вне модели 50/50',
+                          icon: Icons.handshake_outlined,
+                          colors: const [
+                            Color(0xFF06B6D4),
+                            Color(0xFF0891B2),
+                          ],
+                          page: const SideIncomePage(),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(child: SizedBox()),
                       ],
                     ),
                   ],

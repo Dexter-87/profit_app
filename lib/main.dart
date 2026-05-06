@@ -9,6 +9,7 @@ import 'package:my_app/pages/summary_page.dart';
 import 'package:my_app/pages/plan_page.dart';
 import 'package:my_app/pages/expenses_page.dart';
 import 'package:my_app/pages/stock_page.dart';
+import 'package:my_app/pages/side_income_page.dart';
 
 void main() {
   runApp(const TechnoOptApp());
@@ -56,6 +57,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       const PlanPage(),
       const ExpensesPage(),
       const StockPage(),
+      const SideIncomePage(),
     ];
 
     return Scaffold(
@@ -101,6 +103,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.inventory_2_outlined),
             label: 'Остатки',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.handshake_outlined),
+            label: 'Доп',
           ),
         ],
       ),
