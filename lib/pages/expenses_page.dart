@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +6,7 @@ import 'package:my_app/services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ExpensesPage extends StatefulWidget {
   const ExpensesPage({super.key});
@@ -16,7 +16,7 @@ class ExpensesPage extends StatefulWidget {
 }
 
 class _ExpensesPageState extends State<ExpensesPage> {
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = 'http://192.168.1.248:8080';
 
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
@@ -177,12 +177,19 @@ class _ExpensesPageState extends State<ExpensesPage> {
     }
   }
 
-  void _downloadPdfReport() {
+  void _downloadPdfReport() async {
     final from = _formatApiDate(_dateFrom);
     final to = _formatApiDate(_dateTo);
 
-    final url = '$baseUrl/expenses-report/pdf?dateFrom=$from&dateTo=$to';
-    html.window.open(url, '_blank');
+    final url =
+        '$baseUrl/expenses-report/pdf?dateFrom=$from&dateTo=$to';
+
+    final uri = Uri.parse(url);
+
+    await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   Future<void> _saveExpense() async {

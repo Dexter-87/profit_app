@@ -1,9 +1,10 @@
-const express = require('express');
+﻿const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -990,6 +991,61 @@ app.post('/add-stock', async (req, res) => {
   }
 });
 
+app.delete('/stock/:rowIndex', async (req, res) => {
+  try {
+    const rowIndex = Number(req.params.rowIndex);
+
+    if (!rowIndex || rowIndex < 2) {
+      return res.status(400).json({
+        error: 'Неверный rowIndex',
+      });
+    }
+
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+    });
+
+    const sheet = spreadsheet.data.sheets.find(
+      (s) => s.properties.title === 'Остатки'
+    );
+
+    if (!sheet) {
+      return res.status(404).json({
+        error: 'Лист Остатки не найден',
+      });
+    }
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheet.properties.sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex - 1,
+                endIndex: rowIndex,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    res.json({
+      ok: true,
+    });
+  } catch (error) {
+    console.error('Ошибка DELETE /stock:', error);
+
+    res.status(500).json({
+      error: 'Ошибка удаления остатка',
+      details: error.message,
+    });
+  }
+});
+
 // ================= ПЛАН =================
 
 app.get('/plan', async (req, res) => {
@@ -1082,9 +1138,7 @@ async function calculateAnalytics(req, topLimit = 5) {
   const dateFrom = req.query.dateFrom || req.query.date_from || req.query.datefrom;
   const dateTo = req.query.dateTo || req.query.date_to || req.query.dateto;
 
-  const selectedModel = String(
-    req.query.model || req.query.workModel || req.query.selectedModel || 'current'
-  ).trim();
+  const selectedModel = 'capital_work';
 
   const from = dateFrom ? parseDate(dateFrom) : null;
   const to = dateTo ? parseDate(dateTo) : null;
@@ -1504,6 +1558,19 @@ app.post('/invoice-excel', async (req, res) => {
 });
 
 // ================= НАКЛАДНАЯ PDF =================
+function fixText(value) {
+  if (value === null || value === undefined) return '';
+
+  let text = String(value);
+
+  try {
+    if (text.includes('Ð') || text.includes('Ñ') || text.includes('Â')) {
+      text = Buffer.from(text, 'latin1').toString('utf8');
+    }
+  } catch (e) {}
+
+  return text;
+}
 
 app.post('/invoice-pdf', (req, res) => {
   try {
@@ -1514,25 +1581,26 @@ app.post('/invoice-pdf', (req, res) => {
     }
 
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const fontPath = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
 
-    const fontPath = 'C:/Windows/Fonts/arial.ttf';
-    if (fs.existsSync(fontPath)) {
-      doc.font(fontPath);
-    }
-
+    doc.registerFont('DejaVu', fontPath);
+    doc.font('DejaVu');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=invoice.pdf');
 
     doc.pipe(res);
-
+    doc.info.Title = 'Накладная';
+    doc.info.Author = 'TechnoOpt';
     doc.fontSize(22).text('TechnoOpt', { align: 'center' });
     doc.moveDown(0.3);
-    doc.fontSize(18).text('Накладная', { align: 'center' });
+    doc.fontSize(18).text('Накладная', {
+      align: 'center',
+    });
 
     doc.moveDown();
     doc.fontSize(11).text(`Дата: ${todayRu()}`);
-    doc.text(`Клиент: ${client || '—'}`);
-    doc.text(`Канал: ${channel || '—'}`);
+    doc.text(fixText(`Клиент: ${client || '-'}`));
+    doc.text(fixText(`Канал: ${channel || '-'}`));
 
     doc.moveDown();
 
@@ -1603,10 +1671,17 @@ async function buildAnalyticsReportData(req) {
 function setupPdf(res, filename) {
   const doc = new PDFDocument({ margin: 40, size: 'A4' });
 
-  const fontPath = 'C:/Windows/Fonts/arial.ttf';
-  if (fs.existsSync(fontPath)) {
-    doc.font(fontPath);
-  }
+  const fontPath = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
+
+  doc.registerFont('DejaVu', fontPath);
+  doc.font('DejaVu');
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+
+  doc.pipe(res);
+  return doc;
+
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
@@ -1615,24 +1690,18 @@ function setupPdf(res, filename) {
   return doc;
 }
 
-function pdfHeader(doc, title, data) {
-  doc.fontSize(22).text('TechnoOpt', { align: 'center' });
-  doc.moveDown(0.3);
-  doc.fontSize(18).text(title, { align: 'center' });
-  doc.moveDown();
+ function pdfHeader(doc, title, data) {
+   doc.fontSize(22).text('TechnoOpt', { align: 'center' });
+   doc.moveDown(0.3);
+   doc.fontSize(18).text(title, { align: 'center' });
+   doc.moveDown();
 
-  doc.fontSize(11).text(`Период: ${data.dateFrom || '—'} - ${data.dateTo || '—'}`);
-  doc.text(
-    `Модель: ${
-      data.selectedModel === 'capital_work'
-        ? 'Капитал + работа'
-        : 'Текущая'
-    }`
-  );
-  doc.moveDown();
-}
+   doc.fontSize(11).text(`Период: ${data.dateFrom || '—'} - ${data.dateTo || '—'}`);
+   doc.text(`Модель: Капитал + работа`);
+   doc.moveDown();
+ }
 
-function checkPage(doc, y) {
+ function checkPage(doc, y) {
   if (y > 740) {
     doc.addPage();
     return 40;
@@ -1660,10 +1729,10 @@ app.get('/expenses-report/pdf', async (req, res) => {
 
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
 
-    const fontPath = 'C:/Windows/Fonts/arial.ttf';
-    if (fs.existsSync(fontPath)) {
-      doc.font(fontPath);
-    }
+    const fontPath = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
+
+    doc.registerFont('DejaVu', fontPath);
+    doc.font('DejaVu');
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -1749,7 +1818,31 @@ app.get('/expenses-report/pdf', async (req, res) => {
 });
 
 // ===== ОБЩИЙ ОТЧЁТ БИЗНЕСА =====
+app.get('/business-report/html', async (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
 
+    res.send(`
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Отчёт</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+  <h1>TechnoOpt</h1>
+  <h2>Общий отчёт бизнеса</h2>
+  <p>Русский текст работает нормально 👍</p>
+</body>
+</html>
+    `);
+  } catch (error) {
+    console.error('Ошибка /business-report/html:', error);
+    res.status(500).send('Ошибка HTML отчёта');
+  }
+});
+
+// PDF отчет
 app.get('/business-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
@@ -2115,5 +2208,5 @@ app.get('/stock-report/pdf', async (req, res) => {
   });
 
 app.listen(PORT, () => {
-  console.log(`Server started on http://localhost:${PORT}`);
+  console.log(`Server started on port ${PORT}`);
 });

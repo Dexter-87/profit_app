@@ -17,8 +17,6 @@ class _SummaryPageState extends State<SummaryPage> {
   List<Map<String, dynamic>> _rows = [];
   Map<String, dynamic> _analytics = {};
 
-  String _selectedModel = 'Текущая';
-
   String _period = '30 дней';
   DateTime? _dateFrom;
   DateTime? _dateTo;
@@ -52,7 +50,10 @@ class _SummaryPageState extends State<SummaryPage> {
 
   String _uiDate(DateTime? date) {
     if (date == null) return 'Не выбрано';
-    return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
+
+    return '${date.year}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.day.toString().padLeft(2, '0')}';
   }
 
   String _periodText() {
@@ -188,32 +189,37 @@ class _SummaryPageState extends State<SummaryPage> {
     if (value is num) return value.toDouble();
 
     return double.tryParse(
-      value
-          .toString()
-          .replaceAll('₸', '')
-          .replaceAll('%', '')
-          .replaceAll(' ', '')
-          .replaceAll(',', '.')
-          .trim(),
-    ) ??
+          value
+              .toString()
+              .replaceAll('₸', '')
+              .replaceAll('%', '')
+              .replaceAll(' ', '')
+              .replaceAll(',', '.')
+              .trim(),
+        ) ??
         0;
   }
 
   String _formatMoney(dynamic value) {
     final number = _toDouble(value).round().toString();
+    final isNegative = number.startsWith('-');
+    final cleanNumber = number.replaceAll('-', '');
+
     final buffer = StringBuffer();
     int counter = 0;
 
-    for (int i = number.length - 1; i >= 0; i--) {
-      buffer.write(number[i]);
+    for (int i = cleanNumber.length - 1; i >= 0; i--) {
+      buffer.write(cleanNumber[i]);
       counter++;
+
       if (counter == 3 && i != 0) {
         buffer.write(' ');
         counter = 0;
       }
     }
 
-    return '${buffer.toString().split('').reversed.join()} ₸';
+    final result = buffer.toString().split('').reversed.join();
+    return '${isNegative ? '-' : ''}$result ₸';
   }
 
   String _formatPercent(dynamic value) {
@@ -222,9 +228,10 @@ class _SummaryPageState extends State<SummaryPage> {
 
   dynamic _value(String metric, String column) {
     final row = _rows.firstWhere(
-          (r) => (r['metric'] ?? '').toString().trim() == metric,
+      (r) => (r['metric'] ?? '').toString().trim() == metric,
       orElse: () => <String, dynamic>{},
     );
+
     return row[column] ?? 0;
   }
 
@@ -247,32 +254,30 @@ class _SummaryPageState extends State<SummaryPage> {
       final totalWork = stasWork + alexWork;
 
       final stasCapitalShare =
-      totalCapital == 0 ? 0 : (stasCapital / totalCapital) * 100;
+          totalCapital == 0 ? 0 : (stasCapital / totalCapital) * 100;
       final alexCapitalShare =
-      totalCapital == 0 ? 0 : (alexCapital / totalCapital) * 100;
+          totalCapital == 0 ? 0 : (alexCapital / totalCapital) * 100;
 
       final stasWorkShare =
-      totalWork == 0 ? 0 : (stasWork / totalWork) * 100;
+          totalWork == 0 ? 0 : (stasWork / totalWork) * 100;
       final alexWorkShare =
-      totalWork == 0 ? 0 : (alexWork / totalWork) * 100;
+          totalWork == 0 ? 0 : (alexWork / totalWork) * 100;
 
-      final capitalWeight =
-      _toDouble(_value('Вес вложений', 'total')) == 0
+      final capitalWeight = _toDouble(_value('Вес вложений', 'total')) == 0
           ? 50
           : _toDouble(_value('Вес вложений', 'total'));
 
-      final workWeight =
-      _toDouble(_value('Вес работы', 'total')) == 0
+      final workWeight = _toDouble(_value('Вес работы', 'total')) == 0
           ? 50
           : _toDouble(_value('Вес работы', 'total'));
 
       final stasFinal =
           (stasCapitalShare * capitalWeight / 100) +
-              (stasWorkShare * workWeight / 100);
+          (stasWorkShare * workWeight / 100);
 
       final alexFinal =
           (alexCapitalShare * capitalWeight / 100) +
-              (alexWorkShare * workWeight / 100);
+          (alexWorkShare * workWeight / 100);
 
       final rows = [
         {
@@ -361,45 +366,9 @@ class _SummaryPageState extends State<SummaryPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xFF22C55E), width: 1.5),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _modelButton(String title) {
-    final selected = _selectedModel == title;
-
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          setState(() {
-            _selectedModel = title;
-          });
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: selected
-                ? const LinearGradient(
-              colors: [Color(0xFF22C55E), Color(0xFF16A34A)],
-            )
-                : null,
-            color: selected ? null : AppColors.bg,
-            border: Border.all(
-              color: selected ? Colors.transparent : AppColors.stroke,
-            ),
-          ),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected ? Colors.white : AppColors.textSecondary,
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
+            borderSide: const BorderSide(
+              color: Color(0xFF22C55E),
+              width: 1.5,
             ),
           ),
         ),
@@ -564,38 +533,11 @@ class _SummaryPageState extends State<SummaryPage> {
     final stasFinalShare = _toDouble(_value('Итоговая доля', 'stas'));
     final alexFinalShare = _toDouble(_value('Итоговая доля', 'alexey'));
 
-    final myNet = _toDouble(_analytics['myNet']);
-    final alexNet = _toDouble(_analytics['alexNet']);
+    final resultStas = _netProfit * (stasFinalShare / 100);
+    final resultAlex = _netProfit * (alexFinalShare / 100);
 
-    final capitalWorkStas = _netProfit * (stasFinalShare / 100);
-    final capitalWorkAlex = _netProfit * (alexFinalShare / 100);
-
-    double resultStas;
-    double resultAlex;
-    double resultStasShare;
-    double resultAlexShare;
-    String note;
-
-    if (_selectedModel == 'Текущая') {
-      resultStas = myNet;
-      resultAlex = alexNet;
-
-      final total = resultStas + resultAlex;
-      resultStasShare = total == 0 ? 0 : (resultStas / total) * 100;
-      resultAlexShare = total == 0 ? 0 : (resultAlex / total) * 100;
-
-      note =
-      'Текущая: Ariston и продажи с плюсом делятся 50/50, остальные продажи уходят Алексею. Расходы делятся пополам.';
-    } else {
-      resultStas = capitalWorkStas;
-      resultAlex = capitalWorkAlex;
-
-      resultStasShare = stasFinalShare;
-      resultAlexShare = alexFinalShare;
-
-      note =
-      'Капитал + работа: чистая прибыль распределяется по итоговой доле из весов капитала и работы.';
-    }
+    const note =
+        'Капитал + работа: чистая прибыль распределяется по итоговой доле из весов капитала и работы.';
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -620,158 +562,202 @@ class _SummaryPageState extends State<SummaryPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error.isNotEmpty
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            _error,
-            style: const TextStyle(color: AppColors.danger),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
-          : Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: AppUi.cardDecoration(
-                  radius: 28,
-                  borderColor:
-                  const Color(0xFF22C55E).withOpacity(0.25),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withOpacity(0.02),
-                      const Color(0xFF22C55E).withOpacity(0.08),
-                    ],
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      _error,
+                      style: const TextStyle(color: AppColors.danger),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: AppUi.cardDecoration(
+                            radius: 28,
+                            borderColor:
+                                const Color(0xFF22C55E).withOpacity(0.25),
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Colors.white.withOpacity(0.02),
+                                const Color(0xFF22C55E).withOpacity(0.08),
+                              ],
+                            ),
+                          ),
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Модель распределения',
+                                style: TextStyle(
+                                  color: AppColors.textMain,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Здесь задаются вложения, работа, период и итоговая доля распределения прибыли.',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        _periodCard(),
+
+                        const SizedBox(height: 16),
+
+                        AppUi.sectionCard(
+                          title: 'Редактирование',
+                          icon: Icons.edit_outlined,
+                          accent: const Color(0xFF22C55E),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  _input('Стас вложения', stasCapitalCtrl),
+                                  const SizedBox(width: 10),
+                                  _input('Алексей вложения', alexCapitalCtrl),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  _input('Стас работа', stasWorkCtrl),
+                                  const SizedBox(width: 10),
+                                  _input('Алексей работа', alexWorkCtrl),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: _saveModel,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    backgroundColor: const Color(0xFF22C55E),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'СОХРАНИТЬ МОДЕЛЬ',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        AppUi.sectionCard(
+                          title: 'Итоговые доли',
+                          icon: Icons.account_tree_outlined,
+                          accent: const Color(0xFF4DA3FF),
+                          child: Column(
+                            children: [
+                              _line(
+                                'Доля Стаса',
+                                _formatPercent(stasFinalShare),
+                                bold: true,
+                              ),
+                              _line(
+                                'Доля Алексея',
+                                _formatPercent(alexFinalShare),
+                                bold: true,
+                              ),
+                              const Divider(
+                                color: AppColors.stroke,
+                                height: 24,
+                              ),
+                              _line(
+                                'Общая доля',
+                                _formatPercent(
+                                  stasFinalShare + alexFinalShare,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        AppUi.sectionCard(
+                          title: 'Распределение по модели',
+                          icon: Icons.pie_chart_outline,
+                          accent: const Color(0xFF22C55E),
+                          child: Column(
+                            children: [
+                              _line('Период', _periodText()),
+                              const Divider(
+                                color: AppColors.stroke,
+                                height: 24,
+                              ),
+                              _line(
+                                'Стас',
+                                _formatMoney(resultStas),
+                                bold: true,
+                              ),
+                              _line(
+                                'Алексей',
+                                _formatMoney(resultAlex),
+                                bold: true,
+                              ),
+                              _line(
+                                'Доля Стаса',
+                                _formatPercent(stasFinalShare),
+                              ),
+                              _line(
+                                'Доля Алексея',
+                                _formatPercent(alexFinalShare),
+                              ),
+                              _line(
+                                'Общая чистая прибыль',
+                                _formatMoney(_netProfit),
+                                bold: true,
+                              ),
+                              const Divider(
+                                color: AppColors.stroke,
+                                height: 24,
+                              ),
+                              Text(
+                                note,
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Модель распределения',
-                      style: TextStyle(
-                        color: AppColors.textMain,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Здесь задаются вложения, работа, период и сценарий распределения прибыли.',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 14,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              _periodCard(),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Редактирование',
-                icon: Icons.edit_outlined,
-                accent: const Color(0xFF22C55E),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        _input('Стас вложения', stasCapitalCtrl),
-                        const SizedBox(width: 10),
-                        _input('Алексей вложения', alexCapitalCtrl),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        _input('Стас работа', stasWorkCtrl),
-                        const SizedBox(width: 10),
-                        _input('Алексей работа', alexWorkCtrl),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _saveModel,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                          ),
-                          backgroundColor: const Color(0xFF22C55E),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: const Text(
-                          'СОХРАНИТЬ МОДЕЛЬ',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Сценарий распределения',
-                icon: Icons.compare_arrows_outlined,
-                accent: const Color(0xFF22C55E),
-                child: Row(
-                  children: [
-                    _modelButton('Текущая'),
-                    const SizedBox(width: 8),
-                    _modelButton('Капитал + работа'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Распределение по модели',
-                icon: Icons.account_tree_outlined,
-                accent: const Color(0xFF4DA3FF),
-                child: Column(
-                  children: [
-                    _line('Период', _periodText()),
-                    const Divider(color: AppColors.stroke, height: 24),
-                    _line('Стас', _formatMoney(resultStas), bold: true),
-                    _line('Алексей', _formatMoney(resultAlex),
-                        bold: true),
-                    _line('Доля Стаса',
-                        _formatPercent(resultStasShare)),
-                    _line('Доля Алексея',
-                        _formatPercent(resultAlexShare)),
-                    _line('Общая чистая прибыль',
-                        _formatMoney(_netProfit),
-                        bold: true),
-                    const Divider(color: AppColors.stroke, height: 24),
-                    Text(
-                      note,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

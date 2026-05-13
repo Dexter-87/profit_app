@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:html' as html;
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CreateOrderPage extends StatefulWidget {
   const CreateOrderPage({super.key});
@@ -15,7 +15,7 @@ class CreateOrderPage extends StatefulWidget {
 }
 
 class _CreateOrderPageState extends State<CreateOrderPage> {
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = 'http://192.168.1.248:8080';
 
   String _selectedChannel = 'ОПТ';
   String _selectedPriceType = 'Цена 0';
@@ -205,26 +205,22 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     return '${isNegative ? '-' : ''}${buffer.toString().split('').reversed.join()} ₸';
   }
 
-  void _downloadFile({
-    required List<int> bytes,
-    required String fileName,
-    required String mimeType,
-  }) {
-    final blob = html.Blob([bytes], mimeType);
-    final url = html.Url.createObjectUrlFromBlob(blob);
+   Future<void> _downloadFile({
+     required List<int> bytes,
+     required String fileName,
+     required String mimeType,
+   }) async {
+     final uri = Uri.parse(
+       'http://192.168.1.248:8080/invoice/$fileName',
+     );
 
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute('download', fileName)
-      ..style.display = 'none';
+     await launchUrl(
+       uri,
+       mode: LaunchMode.externalApplication,
+     );
+   }
 
-    html.document.body?.children.add(anchor);
-    anchor.click();
-    anchor.remove();
-
-    html.Url.revokeObjectUrl(url);
-  }
-
-  void _addItemToInvoice() {
+   void _addItemToInvoice() {
     final name = _productController.text.trim();
     final quantity = _quantity;
     final cost = _cost;

@@ -1,10 +1,10 @@
-import 'dart:html' as html;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:my_app/services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class StockPage extends StatefulWidget {
   const StockPage({super.key});
@@ -26,6 +26,7 @@ class _StockPageState extends State<StockPage> {
 
   Map<String, dynamic>? _selectedProduct;
   bool _saving = false;
+  bool _deleting = false;
 
   @override
   void initState() {
@@ -65,8 +66,14 @@ class _StockPageState extends State<StockPage> {
     }
   }
 
-  void _downloadStockPdf() {
-    html.window.open('http://localhost:8080/stock-report/pdf', '_blank');
+  Future<void> _downloadStockPdf() async {
+    final uri = Uri.parse('http://192.168.1.248:8080/stock-report/pdf');
+
+    await launchUrl(
+      uri,
+      mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
+      webOnlyWindowName: '_blank',
+    );
   }
 
   void _filterPrices() {
@@ -95,13 +102,13 @@ class _StockPageState extends State<StockPage> {
   double _toDouble(dynamic value) {
     if (value == null) return 0;
     return double.tryParse(
-      value
-          .toString()
-          .replaceAll('₸', '')
-          .replaceAll(' ', '')
-          .replaceAll(',', '.')
-          .trim(),
-    ) ??
+          value
+              .toString()
+              .replaceAll('₸', '')
+              .replaceAll(' ', '')
+              .replaceAll(',', '.')
+              .trim(),
+        ) ??
         0;
   }
 
@@ -133,16 +140,25 @@ class _StockPageState extends State<StockPage> {
 
   String _stockName(Map<String, dynamic> row) {
     return (row['Наименование'] ??
-        row['name'] ??
-        row['Модель'] ??
-        row['model'] ??
-        '')
+            row['name'] ??
+            row['Модель'] ??
+            row['model'] ??
+            row['__row']?[0] ??
+            '')
         .toString()
         .trim();
   }
 
   double _stockQty(Map<String, dynamic> row) {
-    return _toDouble(row['Количество'] ?? row['quantity'] ?? row['qty']);
+    return _toDouble(
+      row['Количество'] ?? row['quantity'] ?? row['qty'] ?? row['__row']?[1],
+    );
+  }
+
+  int? _stockRowIndex(Map<String, dynamic> row) {
+    final value = row['__index'] ?? row['rowIndex'];
+    if (value == null) return null;
+    return int.tryParse(value.toString());
   }
 
   bool _sameProduct(String a, String b) {
@@ -225,6 +241,62 @@ class _StockPageState extends State<StockPage> {
       _message('Ошибка: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _deleteStock(Map<String, dynamic> row) async {
+    final rowIndex = _stockRowIndex(row);
+    final name = _stockName(row);
+
+    if (rowIndex == null || rowIndex < 2) {
+      _message('Не найден номер строки для удаления');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text(
+          'Удалить остаток?',
+          style: TextStyle(
+            color: AppColors.textMain,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        content: Text(
+          name.isEmpty ? 'Без названия' : name,
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Удалить',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      setState(() => _deleting = true);
+
+      await ApiService.deleteStock(rowIndex);
+
+      await _loadAll();
+      _message('Остаток удалён');
+    } catch (e) {
+      _message('Ошибка удаления: $e');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -370,8 +442,8 @@ class _StockPageState extends State<StockPage> {
     final qtyColor = qty <= 0
         ? AppColors.danger
         : qty <= 2
-        ? const Color(0xFFF59E0B)
-        : const Color(0xFF22C55E);
+            ? const Color(0xFFF59E0B)
+            : const Color(0xFF22C55E);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -460,6 +532,7 @@ class _StockPageState extends State<StockPage> {
       child: Column(
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AppUi.iconBadge(
                 icon: Icons.inventory_2_outlined,
@@ -476,6 +549,26 @@ class _StockPageState extends State<StockPage> {
                     color: AppColors.textMain,
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _deleting ? null : () => _deleteStock(row),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withOpacity(0.18)),
+                  ),
+                  child: Icon(
+                    _deleting
+                        ? Icons.hourglass_top_rounded
+                        : Icons.delete_outline_rounded,
+                    color: Colors.red,
+                    size: 20,
                   ),
                 ),
               ),
@@ -544,207 +637,194 @@ class _StockPageState extends State<StockPage> {
       ),
       body: _loading
           ? const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      )
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
           : _error.isNotEmpty
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            _error,
-            style: const TextStyle(color: AppColors.danger),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
-          : RefreshIndicator(
-        onRefresh: _loadAll,
-        color: AppColors.primary,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: AppUi.cardDecoration(
-                    radius: 28,
-                    borderColor:
-                    const Color(0xFF22C55E).withOpacity(0.25),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withOpacity(0.02),
-                        const Color(0xFF22C55E).withOpacity(0.07),
-                      ],
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      _error,
+                      style: const TextStyle(color: AppColors.danger),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Склад и остатки',
-                        style: TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Выбери модель из прайса и сразу проверь, сколько штук есть в наличии.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.inventory_2_outlined,
-                        title: 'Позиций',
-                        value: _stockRows.length.toString(),
-                        accentColors: const [
-                          Color(0xFF4DA3FF),
-                          Color(0xFF2D7DFF),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.numbers,
-                        title: 'Штук',
-                        value: _formatQty(totalQty),
-                        accentColors: const [
-                          Color(0xFF8B5CF6),
-                          Color(0xFF6D28D9),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                AppUi.metricCard(
-                  icon: Icons.payments_outlined,
-                  title: 'Сумма склада',
-                  value: _formatMoney(totalCost),
-                  accentColors: const [
-                    Color(0xFF22C55E),
-                    Color(0xFF16A34A),
-                  ],
-                  compact: true,
-                ),
-
-                const SizedBox(height: 12),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: GradientButton(
-                    text: 'PDF ОТЧЁТ ПО ОСТАТКАМ',
-                    icon: Icons.picture_as_pdf_outlined,
-                    onTap: _downloadStockPdf,
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Проверить модель',
-                  icon: Icons.search_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: Column(
-                    children: [
-                      _input(
-                        controller: _searchController,
-                        hint: 'Начни писать модель из прайса',
-                      ),
-                      if (_filteredPrices.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        ..._filteredPrices.map(_priceSuggestion),
-                      ],
-                      if (_selectedProduct != null) ...[
-                        const SizedBox(height: 12),
-                        _selectedProductBlock(),
-                      ],
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Добавить остаток',
-                  icon: Icons.add_box_outlined,
-                  accent: const Color(0xFF22C55E),
-                  child: Column(
-                    children: [
-                      if (_selectedProduct == null)
-                        const Text(
-                          'Сначала выбери модель в блоке выше.',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w700,
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadAll,
+                  color: AppColors.primary,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: AppUi.cardDecoration(
+                              radius: 28,
+                              borderColor:
+                                  const Color(0xFF22C55E).withOpacity(0.25),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withOpacity(0.02),
+                                  const Color(0xFF22C55E).withOpacity(0.07),
+                                ],
+                              ),
+                            ),
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Склад и остатки',
+                                  style: TextStyle(
+                                    color: AppColors.textMain,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Выбери модель из прайса и сразу проверь, сколько штук есть в наличии.',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        )
-                      else
-                        _selectedProductBlock(),
-                      const SizedBox(height: 12),
-                      _input(
-                        controller: _qtyController,
-                        hint: 'Количество',
-                        keyboardType: TextInputType.number,
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.inventory_2_outlined,
+                                  title: 'Позиций',
+                                  value: _stockRows.length.toString(),
+                                  accentColors: const [
+                                    Color(0xFF4DA3FF),
+                                    Color(0xFF2D7DFF),
+                                  ],
+                                  compact: true,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.numbers,
+                                  title: 'Штук',
+                                  value: _formatQty(totalQty),
+                                  accentColors: const [
+                                    Color(0xFF8B5CF6),
+                                    Color(0xFF6D28D9),
+                                  ],
+                                  compact: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          AppUi.metricCard(
+                            icon: Icons.payments_outlined,
+                            title: 'Сумма склада',
+                            value: _formatMoney(totalCost),
+                            accentColors: const [
+                              Color(0xFF22C55E),
+                              Color(0xFF16A34A),
+                            ],
+                            compact: true,
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: GradientButton(
+                              text: 'PDF ОТЧЁТ ПО ОСТАТКАМ',
+                              icon: Icons.picture_as_pdf_outlined,
+                              onTap: _downloadStockPdf,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          AppUi.sectionCard(
+                            title: 'Проверить модель',
+                            icon: Icons.search_outlined,
+                            accent: const Color(0xFF06B6D4),
+                            child: Column(
+                              children: [
+                                _input(
+                                  controller: _searchController,
+                                  hint: 'Начни писать модель из прайса',
+                                ),
+                                if (_filteredPrices.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  ..._filteredPrices.map(_priceSuggestion),
+                                ],
+                                if (_selectedProduct != null) ...[
+                                  const SizedBox(height: 12),
+                                  _selectedProductBlock(),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          AppUi.sectionCard(
+                            title: 'Добавить остаток',
+                            icon: Icons.add_box_outlined,
+                            accent: const Color(0xFF22C55E),
+                            child: Column(
+                              children: [
+                                if (_selectedProduct == null)
+                                  const Text(
+                                    'Сначала выбери модель в блоке выше.',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  )
+                                else
+                                  _selectedProductBlock(),
+                                const SizedBox(height: 12),
+                                _input(
+                                  controller: _qtyController,
+                                  hint: 'Количество',
+                                  keyboardType: TextInputType.number,
+                                ),
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: GradientButton(
+                                    text: _saving
+                                        ? 'ДОБАВЛЯЮ...'
+                                        : 'ДОБАВИТЬ ОСТАТОК',
+                                    icon: Icons.save_outlined,
+                                    onTap: () {
+                                      if (_saving) return;
+                                      _addStock();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          AppUi.sectionCard(
+                            title: 'Список остатков',
+                            icon: Icons.list_alt_outlined,
+                            accent: const Color(0xFF4DA3FF),
+                            child: _stockRows.isEmpty
+                                ? AppUi.emptyBlock('Остатков пока нет')
+                                : Column(
+                                    children: _stockRows.map(_stockCard).toList(),
+                                  ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: GradientButton(
-                          text: _saving
-                              ? 'ДОБАВЛЯЮ...'
-                              : 'ДОБАВИТЬ ОСТАТОК',
-                          icon: Icons.save_outlined,
-                          onTap: () {
-                            if (_saving) return;
-                            _addStock();
-                          },
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Список остатков',
-                  icon: Icons.list_alt_outlined,
-                  accent: const Color(0xFF4DA3FF),
-                  child: _stockRows.isEmpty
-                      ? AppUi.emptyBlock('Остатков пока нет')
-                      : Column(
-                    children:
-                    _stockRows.map(_stockCard).toList(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -1,9 +1,8 @@
-import 'dart:html' as html;
-
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -19,7 +18,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   Map<String, dynamic> _data = {};
 
   String _selectedPeriod = '30 дней';
-  String _selectedModel = 'current';
 
   DateTime? _dateFrom;
   DateTime? _dateTo;
@@ -51,7 +49,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       final result = await ApiService.fetchAnalytics(
         dateFrom: _formatApiDate(_dateFrom),
         dateTo: _formatApiDate(_dateTo),
-        model: _selectedModel,
       );
 
       setState(() {
@@ -64,14 +61,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         _isLoading = false;
       });
     }
-  }
-
-  void _changeModel(String model) {
-    setState(() {
-      _selectedModel = model;
-    });
-
-    _loadAnalytics();
   }
 
   void _applyPresetPeriod(String period, {bool load = true}) {
@@ -181,10 +170,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final from = _formatApiDate(_dateFrom);
     final to = _formatApiDate(_dateTo);
 
-    final url =
-        'http://localhost:8080/$endpoint/pdf?dateFrom=$from&dateTo=$to&model=$_selectedModel';
+    final url = 'http://192.168.1.248:8080/$endpoint/pdf?dateFrom=$from&dateTo=$to';
 
-    html.window.open(url, '_blank');
+    launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.inAppBrowserView,
+    );
   }
 
   Widget _pdfButton({
@@ -227,48 +218,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               size: 18,
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _modelButton({
-    required String title,
-    required String value,
-  }) {
-    final selected = _selectedModel == value;
-
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _changeModel(value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: selected
-                ? const LinearGradient(
-              colors: [
-                Color(0xFF22C55E),
-                Color(0xFF16A34A),
-              ],
-            )
-                : null,
-            color: selected ? null : AppColors.bg,
-            border: Border.all(
-              color: selected
-                  ? Colors.transparent
-                  : AppColors.stroke.withOpacity(0.8),
-            ),
-          ),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected ? Colors.white : AppColors.textSecondary,
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
-            ),
-          ),
         ),
       ),
     );
@@ -484,6 +433,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     final revenue = _toDouble(_data['revenue']);
@@ -525,13 +475,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final clients = _safeList(_data['clients']);
 
     final revenueProgress =
-    revenuePlan == 0 ? 0.0 : (revenue / revenuePlan).clamp(0.0, 1.0);
+        revenuePlan == 0 ? 0.0 : (revenue / revenuePlan).clamp(0.0, 1.0);
 
     final stasProgress =
-    stasPlan == 0 ? 0.0 : (myNet / stasPlan).clamp(0.0, 1.0);
+        stasPlan == 0 ? 0.0 : (myNet / stasPlan).clamp(0.0, 1.0);
 
     final alexProgress =
-    alexPlan == 0 ? 0.0 : (alexNet / alexPlan).clamp(0.0, 1.0);
+        alexPlan == 0 ? 0.0 : (alexNet / alexPlan).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -555,581 +505,563 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       ),
       body: _isLoading
           ? const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      )
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
           : _error.isNotEmpty
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            _error,
-            style: const TextStyle(color: AppColors.danger),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
-          : RefreshIndicator(
-        onRefresh: _loadAnalytics,
-        color: AppColors.primary,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: AppUi.cardDecoration(
-                    radius: 28,
-                    borderColor:
-                    const Color(0xFF8B5CF6).withOpacity(0.22),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withOpacity(0.02),
-                        const Color(0xFF8B5CF6).withOpacity(0.08),
-                      ],
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      _error,
+                      style: const TextStyle(color: AppColors.danger),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Финансовая аналитика',
-                        style: TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Прибыль, каналы, бренды, распределение доходов и выполнение плана.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadAnalytics,
+                  color: AppColors.primary,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: AppUi.cardDecoration(
+                              radius: 28,
+                              borderColor:
+                                  const Color(0xFF8B5CF6).withOpacity(0.22),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withOpacity(0.02),
+                                  const Color(0xFF8B5CF6).withOpacity(0.08),
+                                ],
+                              ),
+                            ),
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Финансовая аналитика',
+                                  style: TextStyle(
+                                    color: AppColors.textMain,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Прибыль, каналы, бренды, распределение доходов и выполнение плана.',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
-                const SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
-                Container(
-                  decoration: AppUi.cardDecoration(radius: 22),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      children: [
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
+                          Container(
+                            decoration: AppUi.cardDecoration(radius: 22),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                children: [
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        AppUi.periodButton(
+                                          title: 'Сегодня',
+                                          selected:
+                                              _selectedPeriod == 'Сегодня',
+                                          onTap: () =>
+                                              _applyPresetPeriod('Сегодня'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        AppUi.periodButton(
+                                          title: '7 дней',
+                                          selected:
+                                              _selectedPeriod == '7 дней',
+                                          onTap: () =>
+                                              _applyPresetPeriod('7 дней'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        AppUi.periodButton(
+                                          title: '30 дней',
+                                          selected:
+                                              _selectedPeriod == '30 дней',
+                                          onTap: () =>
+                                              _applyPresetPeriod('30 дней'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        AppUi.periodButton(
+                                          title: 'Всё',
+                                          selected: _selectedPeriod == 'Всё',
+                                          onTap: () =>
+                                              _applyPresetPeriod('Всё'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          onTap: () =>
+                                              _pickDate(isFrom: true),
+                                          child: AppUi.dateBox(
+                                            title: 'С',
+                                            value:
+                                                _formatDisplayDate(_dateFrom),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          onTap: () =>
+                                              _pickDate(isFrom: false),
+                                          child: AppUi.dateBox(
+                                            title: 'По',
+                                            value: _formatDisplayDate(_dateTo),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'PDF отчёты',
+                            icon: Icons.picture_as_pdf_outlined,
+                            accent: const Color(0xFF06B6D4),
+                            child: Column(
+                              children: [
+                                _pdfButton(
+                                  title: 'Общий отчёт бизнеса',
+                                  icon: Icons.analytics_outlined,
+                                  endpoint: 'business-report',
+                                ),
+                                const SizedBox(height: 10),
+                                _pdfButton(
+                                  title: 'Отчёт по клиентам',
+                                  icon: Icons.people_alt_outlined,
+                                  endpoint: 'clients-report',
+                                ),
+                                const SizedBox(height: 10),
+                                _pdfButton(
+                                  title: 'Отчёт по брендам',
+                                  icon: Icons.sell_outlined,
+                                  endpoint: 'brands-report',
+                                ),
+                                const SizedBox(height: 10),
+                                _pdfButton(
+                                  title: 'Отчёт по расходам',
+                                  icon: Icons.receipt_long_outlined,
+                                  endpoint: 'expenses-report',
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          Row(
                             children: [
-                              AppUi.periodButton(
-                                title: 'Сегодня',
-                                selected:
-                                _selectedPeriod == 'Сегодня',
-                                onTap: () =>
-                                    _applyPresetPeriod('Сегодня'),
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.payments_outlined,
+                                  title: 'Выручка',
+                                  value: _formatMoney(revenue),
+                                  accentColors: const [
+                                    Color(0xFF4DA3FF),
+                                    Color(0xFF2D7DFF),
+                                  ],
+                                  compact: true,
+                                ),
                               ),
-                              const SizedBox(width: 8),
-                              AppUi.periodButton(
-                                title: '7 дней',
-                                selected:
-                                _selectedPeriod == '7 дней',
-                                onTap: () =>
-                                    _applyPresetPeriod('7 дней'),
-                              ),
-                              const SizedBox(width: 8),
-                              AppUi.periodButton(
-                                title: '30 дней',
-                                selected:
-                                _selectedPeriod == '30 дней',
-                                onTap: () =>
-                                    _applyPresetPeriod('30 дней'),
-                              ),
-                              const SizedBox(width: 8),
-                              AppUi.periodButton(
-                                title: 'Всё',
-                                selected: _selectedPeriod == 'Всё',
-                                onTap: () =>
-                                    _applyPresetPeriod('Всё'),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.bar_chart_outlined,
+                                  title: 'Прибыль',
+                                  value: _formatMoney(totalProfit),
+                                  accentColors: const [
+                                    Color(0xFF8B5CF6),
+                                    Color(0xFF6D28D9),
+                                  ],
+                                  compact: true,
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                borderRadius:
-                                BorderRadius.circular(18),
-                                onTap: () => _pickDate(isFrom: true),
-                                child: AppUi.dateBox(
-                                  title: 'С',
-                                  value: _formatDisplayDate(_dateFrom),
+
+                          const SizedBox(height: 12),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.person_outline,
+                                  title: 'Стас',
+                                  value: _formatMoney(myNet),
+                                  accentColors: const [
+                                    Color(0xFF22C55E),
+                                    Color(0xFF16A34A),
+                                  ],
+                                  compact: true,
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: InkWell(
-                                borderRadius:
-                                BorderRadius.circular(18),
-                                onTap: () => _pickDate(isFrom: false),
-                                child: AppUi.dateBox(
-                                  title: 'По',
-                                  value: _formatDisplayDate(_dateTo),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.groups_outlined,
+                                  title: 'Алексей',
+                                  value: _formatMoney(alexNet),
+                                  accentColors: const [
+                                    Color(0xFFF59E0B),
+                                    Color(0xFFD97706),
+                                  ],
+                                  compact: true,
                                 ),
                               ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          AppUi.metricCard(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'Расходы',
+                            value: _formatMoney(expenses),
+                            accentColors: const [
+                              Color(0xFF06B6D4),
+                              Color(0xFF0891B2),
+                            ],
+                            compact: true,
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Ключевые показатели',
+                            icon: Icons.grid_view_rounded,
+                            accent: const Color(0xFF4DA3FF),
+                            child: Column(
+                              children: [
+                                _statRow('Продаж', salesCount),
+                                _statRow('Средний чек', _formatMoney(avgCheck)),
+                                _statRow(
+                                  'Средняя прибыль',
+                                  _formatMoney(avgProfit),
+                                ),
+                                _statRow(
+                                  'Маржинальность',
+                                  _formatPercent(margin),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                          ),
 
-                const SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
-                AppUi.sectionCard(
-                  title: 'Модель расчёта',
-                  icon: Icons.account_tree_outlined,
-                  accent: const Color(0xFF22C55E),
-                  child: Row(
-                    children: [
-                      _modelButton(
-                        title: 'Текущая',
-                        value: 'current',
-                      ),
-                      const SizedBox(width: 10),
-                      _modelButton(
-                        title: 'Капитал + работа',
-                        value: 'capital_work',
-                      ),
-                    ],
-                  ),
-                ),
+                          AppUi.sectionCard(
+                            title: 'Каналы',
+                            icon: Icons.account_tree_outlined,
+                            accent: const Color(0xFF22C55E),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _channelMiniCard(
+                                    title: 'Каспий',
+                                    revenue: _formatMoney(kaspiRevenue),
+                                    profit: _formatMoney(kaspiProfit),
+                                    count: kaspiCount,
+                                    accentColors: const [
+                                      Color(0xFF06B6D4),
+                                      Color(0xFF0891B2),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _channelMiniCard(
+                                    title: 'ОПТ',
+                                    revenue: _formatMoney(optRevenue),
+                                    profit: _formatMoney(optProfit),
+                                    count: optCount,
+                                    accentColors: const [
+                                      Color(0xFFF59E0B),
+                                      Color(0xFFD97706),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
-                const SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
-                AppUi.sectionCard(
-                  title: 'PDF отчёты',
-                  icon: Icons.picture_as_pdf_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: Column(
-                    children: [
-                      _pdfButton(
-                        title: 'Общий отчёт бизнеса',
-                        icon: Icons.analytics_outlined,
-                        endpoint: 'business-report',
-                      ),
-                      const SizedBox(height: 10),
-                      _pdfButton(
-                        title: 'Отчёт по клиентам',
-                        icon: Icons.people_alt_outlined,
-                        endpoint: 'clients-report',
-                      ),
-                      const SizedBox(height: 10),
-                      _pdfButton(
-                        title: 'Отчёт по брендам',
-                        icon: Icons.sell_outlined,
-                        endpoint: 'brands-report',
-                      ),
-                      const SizedBox(height: 10),
-                      _pdfButton(
-                        title: 'Отчёт по расходам',
-                        icon: Icons.receipt_long_outlined,
-                        endpoint: 'expenses-report',
-                      ),
-                    ],
-                  ),
-                ),
+                          AppUi.sectionCard(
+                            title: 'План / факт',
+                            icon: Icons.flag_outlined,
+                            accent: const Color(0xFF8B5CF6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                AppUi.progressBlock(
+                                  title: 'План выручки',
+                                  currentLabel: _formatMoney(revenue),
+                                  totalLabel: _formatMoney(revenuePlan),
+                                  progress: revenueProgress,
+                                  accentColors: const [
+                                    Color(0xFF4DA3FF),
+                                    Color(0xFF2D7DFF),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                AppUi.progressBlock(
+                                  title: 'План чистой прибыли Стаса',
+                                  currentLabel: _formatMoney(myNet),
+                                  totalLabel: _formatMoney(stasPlan),
+                                  progress: stasProgress,
+                                  accentColors: const [
+                                    Color(0xFF22C55E),
+                                    Color(0xFF16A34A),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                AppUi.progressBlock(
+                                  title: 'План чистой прибыли Алексея',
+                                  currentLabel: _formatMoney(alexNet),
+                                  totalLabel: _formatMoney(alexPlan),
+                                  progress: alexProgress,
+                                  accentColors: const [
+                                    Color(0xFFF59E0B),
+                                    Color(0xFFD97706),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
 
-                const SizedBox(height: 16),
+                          const SizedBox(height: 16),
 
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.payments_outlined,
-                        title: 'Выручка',
-                        value: _formatMoney(revenue),
-                        accentColors: const [
-                          Color(0xFF4DA3FF),
-                          Color(0xFF2D7DFF),
+                          AppUi.sectionCard(
+                            title: 'Топ клиентов',
+                            icon: Icons.people_alt_outlined,
+                            accent: const Color(0xFF4DA3FF),
+                            child: clients.isEmpty
+                                ? AppUi.emptyBlock('Нет данных по клиентам')
+                                : Column(
+                                    children: List.generate(
+                                      clients.length,
+                                      (index) {
+                                        final item =
+                                            Map<String, dynamic>.from(
+                                          clients[index] as Map,
+                                        );
+
+                                        return _clientRow(
+                                          item,
+                                          index + 1,
+                                          totalProfit,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Бренды',
+                            icon: Icons.sell_outlined,
+                            accent: const Color(0xFF06B6D4),
+                            child: brands.isEmpty
+                                ? AppUi.emptyBlock('Нет данных по брендам')
+                                : Column(
+                                    children: List.generate(
+                                      brands.length,
+                                      (index) {
+                                        final item =
+                                            Map<String, dynamic>.from(
+                                          brands[index] as Map,
+                                        );
+                                        return _brandRow(item);
+                                      },
+                                    ),
+                                  ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Логика распределения',
+                            icon: Icons.rule_outlined,
+                            accent: const Color(0xFFF59E0B),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _bullet(
+                                  'Капитал + работа — прибыль распределяется по итоговой доле из весов капитала и работы.',
+                                  accent: const Color(0xFFF59E0B),
+                                ),
+                                _bullet(
+                                  'Расходы учитываются в чистой прибыли и распределяются по итоговой доле модели.',
+                                  accent: const Color(0xFFF59E0B),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Распределение прибыли',
+                            icon: Icons.pie_chart_outline,
+                            accent: const Color(0xFF22C55E),
+                            child: Column(
+                              children: [
+                                _statRow(
+                                  'Стас',
+                                  _formatMoney(myNet),
+                                  bold: true,
+                                ),
+                                _statRow(
+                                  'Алексей',
+                                  _formatMoney(alexNet),
+                                  bold: true,
+                                ),
+                                const Divider(
+                                  color: AppColors.stroke,
+                                  height: 24,
+                                ),
+                                _statRow(
+                                  'Общая чистая прибыль',
+                                  _formatMoney(myNet + alexNet),
+                                  bold: true,
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Доп. доходы 50/50',
+                            icon: Icons.handshake_outlined,
+                            accent: const Color(0xFF06B6D4),
+                            child: Column(
+                              children: [
+                                _statRow(
+                                  'Доход',
+                                  _formatMoney(_data['sideIncomeTotal']),
+                                ),
+                                _statRow(
+                                  'Расход',
+                                  _formatMoney(_data['sideIncomeExpense']),
+                                ),
+                                _statRow(
+                                  'Чистая прибыль',
+                                  _formatMoney(_data['sideIncomeProfit']),
+                                  bold: true,
+                                ),
+                                const Divider(
+                                  color: AppColors.stroke,
+                                  height: 24,
+                                ),
+                                _statRow(
+                                  'Стас',
+                                  _formatMoney(_data['sideIncomeStas']),
+                                  bold: true,
+                                ),
+                                _statRow(
+                                  'Алексей',
+                                  _formatMoney(_data['sideIncomeAlexey']),
+                                  bold: true,
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Топ-5 товаров по прибыли',
+                            icon: Icons.workspace_premium_outlined,
+                            accent: const Color(0xFF8B5CF6),
+                            child: topProducts.isEmpty
+                                ? AppUi.emptyBlock('Нет данных')
+                                : Column(
+                                    children: List.generate(
+                                      topProducts.length,
+                                      (index) {
+                                        final item =
+                                            Map<String, dynamic>.from(
+                                          topProducts[index] as Map,
+                                        );
+
+                                        return AppUi.rankingRow(
+                                          index: index + 1,
+                                          title: (item['name'] ??
+                                                  'Без названия')
+                                              .toString(),
+                                          value: _formatMoney(item['profit']),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Прибыль по дням',
+                            icon: Icons.calendar_month_outlined,
+                            accent: const Color(0xFF06B6D4),
+                            child: dailyProfit.isEmpty
+                                ? AppUi.emptyBlock('Нет данных')
+                                : Column(
+                                    children: List.generate(
+                                      dailyProfit.length,
+                                      (index) {
+                                        final item =
+                                            Map<String, dynamic>.from(
+                                          dailyProfit[index] as Map,
+                                        );
+
+                                        return AppUi.dayProfitRow(
+                                          date: (item['date'] ?? '').toString(),
+                                          value: _formatMoney(item['profit']),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                          ),
                         ],
-                        compact: true,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.bar_chart_outlined,
-                        title: 'Прибыль',
-                        value: _formatMoney(totalProfit),
-                        accentColors: const [
-                          Color(0xFF8B5CF6),
-                          Color(0xFF6D28D9),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.person_outline,
-                        title: 'Стас',
-                        value: _formatMoney(myNet),
-                        accentColors: const [
-                          Color(0xFF22C55E),
-                          Color(0xFF16A34A),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.groups_outlined,
-                        title: 'Алексей',
-                        value: _formatMoney(alexNet),
-                        accentColors: const [
-                          Color(0xFFF59E0B),
-                          Color(0xFFD97706),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                AppUi.metricCard(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'Расходы',
-                  value: _formatMoney(expenses),
-                  accentColors: const [
-                    Color(0xFF06B6D4),
-                    Color(0xFF0891B2),
-                  ],
-                  compact: true,
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Ключевые показатели',
-                  icon: Icons.grid_view_rounded,
-                  accent: const Color(0xFF4DA3FF),
-                  child: Column(
-                    children: [
-                      _statRow('Продаж', salesCount),
-                      _statRow('Средний чек', _formatMoney(avgCheck)),
-                      _statRow(
-                        'Средняя прибыль',
-                        _formatMoney(avgProfit),
-                      ),
-                      _statRow(
-                        'Маржинальность',
-                        _formatPercent(margin),
-                      ),
-                    ],
                   ),
                 ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Каналы',
-                  icon: Icons.account_tree_outlined,
-                  accent: const Color(0xFF22C55E),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _channelMiniCard(
-                          title: 'Каспий',
-                          revenue: _formatMoney(kaspiRevenue),
-                          profit: _formatMoney(kaspiProfit),
-                          count: kaspiCount,
-                          accentColors: const [
-                            Color(0xFF06B6D4),
-                            Color(0xFF0891B2),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _channelMiniCard(
-                          title: 'ОПТ',
-                          revenue: _formatMoney(optRevenue),
-                          profit: _formatMoney(optProfit),
-                          count: optCount,
-                          accentColors: const [
-                            Color(0xFFF59E0B),
-                            Color(0xFFD97706),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'План / факт',
-                  icon: Icons.flag_outlined,
-                  accent: const Color(0xFF8B5CF6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppUi.progressBlock(
-                        title: 'План выручки',
-                        currentLabel: _formatMoney(revenue),
-                        totalLabel: _formatMoney(revenuePlan),
-                        progress: revenueProgress,
-                        accentColors: const [
-                          Color(0xFF4DA3FF),
-                          Color(0xFF2D7DFF),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      AppUi.progressBlock(
-                        title: 'План чистой прибыли Стаса',
-                        currentLabel: _formatMoney(myNet),
-                        totalLabel: _formatMoney(stasPlan),
-                        progress: stasProgress,
-                        accentColors: const [
-                          Color(0xFF22C55E),
-                          Color(0xFF16A34A),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      AppUi.progressBlock(
-                        title: 'План чистой прибыли Алексея',
-                        currentLabel: _formatMoney(alexNet),
-                        totalLabel: _formatMoney(alexPlan),
-                        progress: alexProgress,
-                        accentColors: const [
-                          Color(0xFFF59E0B),
-                          Color(0xFFD97706),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Топ клиентов',
-                  icon: Icons.people_alt_outlined,
-                  accent: const Color(0xFF4DA3FF),
-                  child: clients.isEmpty
-                      ? AppUi.emptyBlock('Нет данных по клиентам')
-                      : Column(
-                    children: List.generate(
-                      clients.length,
-                          (index) {
-                        final item = Map<String, dynamic>.from(
-                          clients[index] as Map,
-                        );
-
-                        return _clientRow(
-                          item,
-                          index + 1,
-                          totalProfit,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Бренды',
-                  icon: Icons.sell_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: brands.isEmpty
-                      ? AppUi.emptyBlock('Нет данных по брендам')
-                      : Column(
-                    children: List.generate(
-                      brands.length,
-                          (index) {
-                        final item = Map<String, dynamic>.from(
-                          brands[index] as Map,
-                        );
-                        return _brandRow(item);
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Логика распределения',
-                  icon: Icons.rule_outlined,
-                  accent: const Color(0xFFF59E0B),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: _selectedModel == 'capital_work'
-                        ? [
-                      _bullet(
-                        'Капитал + работа — прибыль распределяется по итоговой доле из весов капитала и работы.',
-                        accent: const Color(0xFFF59E0B),
-                      ),
-                      _bullet(
-                        'Расходы делятся 50/50 и вычитаются отдельно.',
-                        accent: const Color(0xFFF59E0B),
-                      ),
-                    ]
-                        : [
-                      _bullet(
-                        'Ariston — прибыль делится 50/50',
-                        accent: const Color(0xFFF59E0B),
-                      ),
-                      _bullet(
-                        'Не Ariston + в комментарии — прибыль делится 50/50',
-                        accent: const Color(0xFFF59E0B),
-                      ),
-                      _bullet(
-                        'Остальные продажи — прибыль уходит Алексею',
-                        accent: const Color(0xFFF59E0B),
-                      ),
-                      _bullet(
-                        'Расходы делятся 50/50 и вычитаются отдельно',
-                        accent: const Color(0xFFF59E0B),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Распределение прибыли',
-                  icon: Icons.pie_chart_outline,
-                  accent: const Color(0xFF22C55E),
-                  child: Column(
-                    children: [
-                      _statRow(
-                        'Стас до расходов',
-                        _formatMoney(myProfit),
-                      ),
-                      _statRow(
-                        'Алексей до расходов',
-                        _formatMoney(alexProfit),
-                      ),
-                      _statRow(
-                        'Половина расходов каждому',
-                        _formatMoney(expenses / 2),
-                      ),
-                      const Divider(
-                        color: AppColors.stroke,
-                        height: 24,
-                      ),
-                      _statRow(
-                        'Стас чистыми',
-                        _formatMoney(myNet),
-                        bold: true,
-                      ),
-                      _statRow(
-                        'Алексей чистыми',
-                        _formatMoney(alexNet),
-                        bold: true,
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Доп. доходы 50/50',
-                  icon: Icons.handshake_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: Column(
-                    children: [
-                      _statRow('Доход', _formatMoney(_data['sideIncomeTotal'])),
-                      _statRow('Расход', _formatMoney(_data['sideIncomeExpense'])),
-                      _statRow('Чистая прибыль', _formatMoney(_data['sideIncomeProfit']), bold: true),
-                      const Divider(color: AppColors.stroke, height: 24),
-                      _statRow('Стас', _formatMoney(_data['sideIncomeStas']), bold: true),
-                      _statRow('Алексей', _formatMoney(_data['sideIncomeAlexey']), bold: true),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Топ-5 товаров по прибыли',
-                  icon: Icons.workspace_premium_outlined,
-                  accent: const Color(0xFF8B5CF6),
-                  child: topProducts.isEmpty
-                      ? AppUi.emptyBlock('Нет данных')
-                      : Column(
-                    children: List.generate(
-                      topProducts.length,
-                          (index) {
-                        final item = Map<String, dynamic>.from(
-                          topProducts[index] as Map,
-                        );
-
-                        return AppUi.rankingRow(
-                          index: index + 1,
-                          title: (item['name'] ?? 'Без названия')
-                              .toString(),
-                          value: _formatMoney(item['profit']),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                AppUi.sectionCard(
-                  title: 'Прибыль по дням',
-                  icon: Icons.calendar_month_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: dailyProfit.isEmpty
-                      ? AppUi.emptyBlock('Нет данных')
-                      : Column(
-                    children: List.generate(
-                      dailyProfit.length,
-                          (index) {
-                        final item = Map<String, dynamic>.from(
-                          dailyProfit[index] as Map,
-                        );
-
-                        return AppUi.dayProfitRow(
-                          date: (item['date'] ?? '').toString(),
-                          value: _formatMoney(item['profit']),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
