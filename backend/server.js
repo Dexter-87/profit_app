@@ -722,11 +722,32 @@ app.delete('/side-income/:rowIndex', async (req, res) => {
 
 app.get('/sales', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('sales')
-      .select('*')
-      .order('id', { ascending: false })
-      .range(0, 10000);
+    let data = [];
+    let error = null;
+
+    let from = 0;
+    const pageSize = 1000;
+
+    while (true) {
+      const { data: chunk, error: e } = await supabase
+        .from('sales')
+        .select('*')
+        .order('id', { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (e) {
+        error = e;
+        break;
+      }
+
+      if (!chunk || chunk.length === 0) break;
+
+      data = data.concat(chunk);
+
+      if (chunk.length < pageSize) break;
+
+      from += pageSize;
+    }
 
   if (!error && data && data.length > 0) {
     const sales = data.map((row) => ({
