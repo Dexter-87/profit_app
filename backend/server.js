@@ -718,6 +718,8 @@ app.delete('/side-income/:rowIndex', async (req, res) => {
 
 // ================= ПРОДАЖИ =================
 
+
+
 app.get('/sales', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -725,7 +727,30 @@ app.get('/sales', async (req, res) => {
       .select('*');
 
   if (!error && data && data.length > 0) {
-    return res.json(data);
+    const sales = data.map((row) => ({
+      __index: row.id,
+      Дата: row.date || '',
+      Канал: row.channel || '',
+      Наименование: row.product || '',
+      Товар: row.product || '',
+      Модель: row.product || '',
+      Название: row.product || '',
+      productName: row.product || '',
+      product: row.product || '',
+      name: row.product || '',
+      'Номер заказа': row.order_number === 'EMPTY' ? '' : row.order_number || '',
+      Себестоимость: row.cost || 0,
+      РРЦ: row.price || 0,
+      Цена: row.price || 0,
+      'Комиссия Kaspi': row.commission || 0,
+      Комиссия: row.commission || 0,
+      'Чистая прибыль': row.profit || 0,
+      Прибыль: row.profit || 0,
+      Комментарий: row.comment || '',
+      Клиент: row.client || '',
+    }));
+
+    return res.json(sales);
   }
     const rows = await getRowsFromSpreadsheet(
       SALES_SPREADSHEET_ID,
@@ -756,6 +781,65 @@ app.get('/sales', async (req, res) => {
     });
   }
 });
+
+app.get('/import-sales-to-supabase', async (req, res) => {
+  try {
+    const rows = await getRowsFromSpreadsheet(
+      SALES_SPREADSHEET_ID,
+      SALES_RANGE
+    );
+
+    const supabaseRows = rows.map((row) => ({
+      date: getCell(row, ['Дата', 'date'], 0),
+      channel: getChannel(row),
+      product: cleanProductName(
+        getCell(row, ['Наименование', 'Товар', 'Модель', 'Название'], 2)
+      ),
+      order_number: getCell(row, ['Номер заказа', 'orderNumber'], 3),
+      cost: toNumber(getCell(row, ['Себестоимость', 'cost'], 4)),
+      price: toNumber(getCell(row, ['РРЦ', 'Цена', 'price'], 5)),
+      commission: toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6)),
+      profit: toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7)),
+      comment: getCell(row, ['Комментарий', 'comment'], 8),
+      client: getCell(row, ['Клиент', 'client'], 13),
+    })).filter((row) => row.product && row.date);
+
+    const { error: clearError } = await supabase
+      .from('sales')
+      .delete()
+      .neq('id', 0);
+
+    if (clearError) throw clearError;
+
+    const chunkSize = 500;
+    let imported = 0;
+
+    for (let i = 0; i < supabaseRows.length; i += chunkSize) {
+      const chunk = supabaseRows.slice(i, i + chunkSize);
+
+      const { error } = await supabase
+        .from('sales')
+        .insert(chunk);
+
+      if (error) throw error;
+
+      imported += chunk.length;
+    }
+
+    res.json({
+      ok: true,
+      imported,
+      totalFromGoogleSheets: rows.length,
+    });
+  } catch (e) {
+    console.error('Ошибка импорта продаж:', e);
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
 app.post('/add-sale', async (req, res) => {
   try {
     const {
@@ -860,6 +944,7 @@ app.post('/add-sale', async (req, res) => {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values },
     });
+
 try {
   const supabaseRows = values.map((row) => ({
     date: row[0] || '',
