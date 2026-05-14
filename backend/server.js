@@ -1,4 +1,5 @@
-﻿const express = require('express');
+﻿const supabase = require('./supabase');
+const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
 const ExcelJS = require('exceljs');
@@ -9,7 +10,27 @@ const path = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.get('/supabase-test', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('clients')
+      .insert([{ name: 'Тестовый клиент' }])
+      .select();
 
+    if (error) throw error;
+
+    res.json({
+      ok: true,
+      message: 'Supabase работает',
+      data,
+    });
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
 const PORT = 8080;
 
 const MODEL_SPREADSHEET_ID = '17EH3JK7KT7bhxGTPeST6iebzGEdXvz6MJi34AGj7rPg';
@@ -699,6 +720,13 @@ app.delete('/side-income/:rowIndex', async (req, res) => {
 
 app.get('/sales', async (req, res) => {
   try {
+    const { data, error } = await supabase
+      .from('sales')
+      .select('*');
+
+  if (!error && data && data.length > 0) {
+    return res.json(data);
+  }
     const rows = await getRowsFromSpreadsheet(
       SALES_SPREADSHEET_ID,
       SALES_RANGE
@@ -832,7 +860,30 @@ app.post('/add-sale', async (req, res) => {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values },
     });
+try {
+  const supabaseRows = values.map((row) => ({
+    date: row[0] || '',
+    channel: row[1] || '',
+    product: row[2] || '',
+    order_number: row[3] || '',
+    cost: Number(row[4]) || 0,
+    price: Number(row[5]) || 0,
+    commission: Number(row[6]) || 0,
+    profit: Number(row[7]) || 0,
+    comment: row[8] || '',
+    client: row[13] || '',
+  }));
 
+  const { error: supabaseError } = await supabase
+    .from('sales')
+    .insert(supabaseRows);
+
+  if (supabaseError) {
+    console.error('Ошибка Supabase insert:', supabaseError);
+  }
+} catch (e) {
+  console.error('Supabase duplicate error:', e.message);
+}
     res.json({ ok: true, added: values.length, batchId });
   } catch (error) {
     console.error('Ошибка /add-sale:', error);

@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "exceljs": "^4.4.0",
     "pdfkit": "^0.18.0"
   }
