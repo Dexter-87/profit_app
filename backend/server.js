@@ -724,7 +724,9 @@ app.get('/sales', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('sales')
-      .select('*');
+      .select('*')
+      .order('id', { ascending: false })
+      .range(0, 10000);
 
   if (!error && data && data.length > 0) {
     const sales = data.map((row) => ({
