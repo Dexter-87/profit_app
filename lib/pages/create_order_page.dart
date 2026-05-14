@@ -1,11 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 
 class CreateOrderPage extends StatefulWidget {
   const CreateOrderPage({super.key});
@@ -15,7 +17,7 @@ class CreateOrderPage extends StatefulWidget {
 }
 
 class _CreateOrderPageState extends State<CreateOrderPage> {
-  static const String baseUrl = 'http://192.168.1.248:8080';
+  static const String baseUrl = 'https://profit-app-7u44.onrender.com';
 
   String _selectedChannel = 'ОПТ';
   String _selectedPriceType = 'Цена 0';
@@ -25,11 +27,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   List<dynamic> _prices = [];
   List<dynamic> _filteredPrices = [];
+
+  List<String> _clients = [];
+  List<String> _filteredClients = [];
+
   final List<Map<String, dynamic>> _invoiceItems = [];
 
   final TextEditingController _productController = TextEditingController();
   final TextEditingController _quantityController =
-  TextEditingController(text: '1');
+      TextEditingController(text: '1');
   final TextEditingController _costController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _commissionController = TextEditingController();
@@ -41,6 +47,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   void initState() {
     super.initState();
     _loadPrices();
+    _loadClients();
   }
 
   @override
@@ -57,6 +64,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   }
 
   Future<void> _loadPrices() async {
+    setState(() => _loadingPrices = true);
+
     try {
       final response = await http.get(Uri.parse('$baseUrl/prices'));
 
@@ -75,6 +84,35 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     } catch (e) {
       setState(() => _loadingPrices = false);
       _showMessage('Прайс не загрузился: $e');
+    }
+  }
+
+  Future<void> _loadClients() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/sales'),
+      );
+
+      final data = jsonDecode(response.body);
+
+      final Set<String> clients = {};
+
+      for (final row in data) {
+        final client =
+            (row['Клиент'] ?? '').toString().trim();
+
+        if (client.isNotEmpty &&
+            client != '-' &&
+            client.length > 2) {
+          clients.add(client);
+        }
+      }
+
+      setState(() {
+        _clients = clients.toList()..sort();
+      });
+    } catch (e) {
+      debugPrint('Ошибка загрузки клиентов: $e');
     }
   }
 
@@ -108,7 +146,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         final fullName = (item['fullName'] ?? '').toString().toLowerCase();
         final source = (item['source'] ?? '').toString().toLowerCase();
         final priceType =
-        (item['priceType'] ?? '').toString().toLowerCase().trim();
+            (item['priceType'] ?? '').toString().toLowerCase().trim();
 
         final matchesProduct = brand.contains(query) ||
             model.contains(query) ||
@@ -119,6 +157,22 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
         return matchesProduct && matchesPriceType;
       }).take(30).toList();
+    });
+  }
+
+  void _onClientChanged(String value) {
+    final query = value.toLowerCase().trim();
+
+    if (query.isEmpty) {
+      setState(() => _filteredClients = []);
+      return;
+    }
+
+    setState(() {
+      _filteredClients = _clients
+          .where((client) => client.toLowerCase().contains(query))
+          .take(8)
+          .toList();
     });
   }
 
@@ -142,15 +196,14 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     });
   }
 
-
   double _toDouble(String value) {
     return double.tryParse(
-      value
-          .replaceAll('₸', '')
-          .replaceAll(' ', '')
-          .replaceAll(',', '.')
-          .trim(),
-    ) ??
+          value
+              .replaceAll('₸', '')
+              .replaceAll(' ', '')
+              .replaceAll(',', '.')
+              .trim(),
+        ) ??
         0;
   }
 
@@ -205,22 +258,23 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     return '${isNegative ? '-' : ''}${buffer.toString().split('').reversed.join()} ₸';
   }
 
-   Future<void> _downloadFile({
-     required List<int> bytes,
-     required String fileName,
-     required String mimeType,
-   }) async {
-     final uri = Uri.parse(
-       'http://192.168.1.248:8080/invoice/$fileName',
-     );
+  Future<void> _saveAndOpenFile({
+    required List<int> bytes,
+    required String fileName,
+  }) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/$fileName');
 
-     await launchUrl(
-       uri,
-       mode: LaunchMode.externalApplication,
-     );
-   }
+    await file.writeAsBytes(bytes, flush: true);
 
-   void _addItemToInvoice() {
+    final result = await OpenFilex.open(file.path);
+
+    if (result.type != ResultType.done) {
+      _showMessage('Файл сохранён, но не открылся: ${result.message}');
+    }
+  }
+
+  void _addItemToInvoice() {
     final name = _productController.text.trim();
     final quantity = _quantity;
     final cost = _cost;
@@ -257,9 +311,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         'commission': commission,
         'comment': comment,
         'profit': profit,
-
-        // Главное исправление:
-        // эти поля теперь принадлежат конкретной строке
         'channel': channel,
         'client': client,
         'orderNumber': orderNumber,
@@ -272,6 +323,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       _commissionController.clear();
       _commentController.clear();
       _filteredPrices = [];
+      _filteredClients = [];
     });
 
     _showMessage('Товар добавлен в накладную');
@@ -320,9 +372,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         _orderController.clear();
         _selectedChannel = 'ОПТ';
         _filteredPrices = [];
+        _filteredClients = [];
       });
 
       _showMessage('Продажи добавлены: $added шт');
+      _loadClients();
     } catch (e) {
       _showMessage('Ошибка подключения: $e');
     } finally {
@@ -350,13 +404,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       );
 
       if (response.statusCode == 200) {
-        _downloadFile(
+        await _saveAndOpenFile(
           bytes: response.bodyBytes,
           fileName: 'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.xlsx',
-          mimeType:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
-        _showMessage('Excel скачан');
+        _showMessage('Excel готов');
       } else {
         _showMessage('Ошибка Excel: ${response.body}');
       }
@@ -383,12 +435,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       );
 
       if (response.statusCode == 200) {
-        _downloadFile(
+        await _saveAndOpenFile(
           bytes: response.bodyBytes,
           fileName: 'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.pdf',
-          mimeType: 'application/pdf',
         );
-        _showMessage('PDF скачан');
+        _showMessage('PDF готов');
       } else {
         _showMessage('Ошибка PDF: ${response.body}');
       }
@@ -427,8 +478,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             borderRadius: BorderRadius.circular(18),
             gradient: selected
                 ? const LinearGradient(
-              colors: [Color(0xFF4DA3FF), Color(0xFF2D7DFF)],
-            )
+                    colors: [Color(0xFF4DA3FF), Color(0xFF2D7DFF)],
+                  )
                 : null,
             color: selected ? null : AppColors.bg,
             border: Border.all(
@@ -613,6 +664,70 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     );
   }
 
+  Widget _clientSearchBlock() {
+    return Column(
+      children: [
+        _input(
+          controller: _clientController,
+          hint: 'Клиент',
+          icon: Icons.person_outline,
+          onChanged: _onClientChanged,
+        ),
+        if (_filteredClients.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 230),
+            decoration: AppUi.cardDecoration(
+              color: AppColors.bg,
+              radius: 18,
+              borderColor: const Color(0xFF4DA3FF).withOpacity(0.30),
+              shadows: const [],
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              itemCount: _filteredClients.length,
+              separatorBuilder: (_, __) => const Divider(
+                color: AppColors.stroke,
+                height: 1,
+              ),
+              itemBuilder: (context, index) {
+                final client = _filteredClients[index];
+
+                return ListTile(
+                  dense: true,
+                  onTap: () {
+                    setState(() {
+                      _clientController.text = client;
+                      _filteredClients = [];
+                    });
+                  },
+                  leading: const Icon(
+                    Icons.person_outline,
+                    color: AppColors.textSecondary,
+                    size: 20,
+                  ),
+                  title: Text(
+                    client,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textSecondary,
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _profitPreview() {
     final profit = _lineProfit;
     final isGood = profit >= 0;
@@ -653,8 +768,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 Text(
                   _formatMoney(profit),
                   style: TextStyle(
-                    color:
-                    isGood ? const Color(0xFF22C55E) : AppColors.danger,
+                    color: isGood ? const Color(0xFF22C55E) : AppColors.danger,
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
@@ -866,7 +980,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         elevation: 0,
         actions: [
           IconButton(
-            onPressed: _loadPrices,
+            onPressed: () {
+              _loadPrices();
+              _loadClients();
+            },
             icon: const Icon(Icons.refresh, color: AppColors.textMain),
           ),
         ],
@@ -900,11 +1017,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   children: [
                     _productSearchBlock(),
                     const SizedBox(height: 10),
-                    _input(
-                      controller: _clientController,
-                      hint: 'Клиент',
-                      icon: Icons.person_outline,
-                    ),
+                    _clientSearchBlock(),
                   ],
                 ),
               ),

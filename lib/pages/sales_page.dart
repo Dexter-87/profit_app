@@ -1,6 +1,12 @@
 import 'dart:collection';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../services/api_service.dart';
 import 'package:my_app/theme/app_colors.dart';
 import 'package:my_app/widgets/app_ui.dart';
@@ -13,6 +19,8 @@ class SalesPage extends StatefulWidget {
 }
 
 class _SalesPageState extends State<SalesPage> {
+  static const String baseUrl = 'https://profit-app-7u44.onrender.com';
+
   bool _loading = true;
   String _error = '';
 
@@ -27,6 +35,8 @@ class _SalesPageState extends State<SalesPage> {
   DateTime? _dateTo;
 
   final Set<String> _deletingBatches = {};
+  final Set<String> _expandedBatches = {};
+  final Set<String> _exportingBatches = {};
 
   @override
   void initState() {
@@ -61,18 +71,20 @@ class _SalesPageState extends State<SalesPage> {
         _error = e.toString();
       });
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
   String _batchId(Map<String, dynamic> row) {
     final raw = (row['batchId'] ??
-        row['BatchId'] ??
-        row['BATCHID'] ??
-        row['Накладная'] ??
-        '')
+            row['BatchId'] ??
+            row['BATCHID'] ??
+            row['Накладная'] ??
+            '')
         .toString()
         .trim();
 
@@ -116,28 +128,22 @@ class _SalesPageState extends State<SalesPage> {
     final batch = _batchId(rows.first);
     final isLegacy = _isLegacyBatch(batch);
 
-    final title = isLegacy
-        ? 'Удалить продажу?'
-        : 'Удалить накладную целиком?';
-
-    final text = isLegacy
-        ? 'Будет удалена 1 строка продажи.'
-        : 'Будут удалены все позиции этой накладной: ${rows.length} шт.';
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: AppColors.card,
           title: Text(
-            title,
+            isLegacy ? 'Удалить продажу?' : 'Удалить накладную целиком?',
             style: const TextStyle(
               color: AppColors.textMain,
               fontWeight: FontWeight.w900,
             ),
           ),
           content: Text(
-            text,
+            isLegacy
+                ? 'Будет удалена 1 строка продажи.'
+                : 'Будут удалены все позиции этой накладной: ${rows.length} шт.',
             style: const TextStyle(
               color: AppColors.textSecondary,
               height: 1.35,
@@ -288,6 +294,113 @@ class _SalesPageState extends State<SalesPage> {
     return rrc - cost - commission;
   }
 
+  String _productName(Map<String, dynamic> row) {
+    final product = (row['Наименование'] ??
+            row['Товар'] ??
+            row['productName'] ??
+            row['product'] ??
+            row['name'] ??
+            '')
+        .toString()
+        .trim();
+
+    return product.isEmpty ? 'Без названия' : product;
+  }
+
+  String _clientName(List<Map<String, dynamic>> rows) {
+    for (final row in rows) {
+      final client = (row['Клиент'] ?? row['client'] ?? '').toString().trim();
+      if (client.isNotEmpty) return client;
+    }
+
+    return '';
+  }
+
+  List<Map<String, dynamic>> _invoiceItemsFromRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    return rows.map((row) {
+      return {
+        'name': _productName(row),
+        'quantity': 1,
+        'cost': _toDouble(row['Себестоимость']),
+        'price': _toDouble(row['РРЦ']),
+        'commission': _toDouble(row['Комиссия Kaspi']),
+        'comment': (row['Комментарий'] ?? '').toString(),
+        'profit': _profit(row),
+        'channel': _detectChannel(row),
+        'client': (row['Клиент'] ?? '').toString(),
+        'orderNumber': (row['Номер заказа'] ?? '').toString(),
+      };
+    }).toList();
+  }
+
+  Future<void> _saveAndOpenFile({
+    required List<int> bytes,
+    required String fileName,
+  }) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/$fileName');
+
+    await file.writeAsBytes(bytes, flush: true);
+
+    final result = await OpenFilex.open(file.path);
+
+    if (result.type != ResultType.done) {
+      _showMessage('Файл сохранён, но не открылся: ${result.message}');
+    }
+  }
+
+  Future<void> _exportInvoice({
+    required List<Map<String, dynamic>> rows,
+    required String type,
+  }) async {
+    if (rows.isEmpty) return;
+
+    final batch = _batchId(rows.first);
+    final endpoint = type == 'pdf' ? 'invoice-pdf' : 'invoice-excel';
+    final extension = type == 'pdf' ? 'pdf' : 'xlsx';
+    final client = _clientName(rows);
+    final channel = rows.map(_detectChannel).toSet().join(' / ');
+    final items = _invoiceItemsFromRows(rows);
+
+    setState(() {
+      _exportingBatches.add('$batch-$type');
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/$endpoint'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'items': items,
+          'client': client,
+          'channel': channel,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        await _saveAndOpenFile(
+          bytes: response.bodyBytes,
+          fileName:
+              'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.$extension',
+        );
+
+        _showMessage(type == 'pdf' ? 'PDF готов' : 'Excel готов');
+      } else {
+        _showMessage('Ошибка файла: ${response.body}');
+      }
+    } catch (e) {
+      _showMessage('Ошибка файла: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _exportingBatches.remove('$batch-$type');
+        });
+      }
+    }
+  }
+
   void _applyPresetPeriod(String period, {bool refresh = true}) {
     final now = DateTime.now();
 
@@ -345,7 +458,7 @@ class _SalesPageState extends State<SalesPage> {
 
       if (search.isNotEmpty) {
         final haystack =
-        '$product $brand $order $channel $client $batch'.toLowerCase();
+            '$product $brand $order $channel $client $batch'.toLowerCase();
 
         if (!haystack.contains(search)) return false;
       }
@@ -412,10 +525,162 @@ class _SalesPageState extends State<SalesPage> {
     }
   }
 
-  Widget _compactValue(String title, double value, {Color? color}) {
+  Widget _tableHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            flex: 6,
+            child: Text(
+              'Товар',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              'Себ.',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              'РРЦ',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              'Приб.',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableRow(Map<String, dynamic> row, int index) {
+    final product = _productName(row);
+    final channel = _detectChannel(row);
+    final cost = _toDouble(row['Себестоимость']);
+    final rrc = _toDouble(row['РРЦ']);
+    final profit = _profit(row);
+    final order = (row['Номер заказа'] ?? '').toString().trim();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.stroke.withOpacity(0.5),
+          ),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 6,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${index + 1}. $product',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 11,
+                    height: 1.2,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '$channel${order.isNotEmpty ? " • №$order" : ""}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              _formatMoney(cost),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: AppColors.textMain,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              _formatMoney(rrc),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: AppColors.textMain,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(
+              _formatMoney(profit),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: profit >= 0 ? AppColors.success : AppColors.danger,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(String title, double value, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
           color: AppColors.bg,
           borderRadius: BorderRadius.circular(14),
@@ -438,7 +703,7 @@ class _SalesPageState extends State<SalesPage> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: color ?? AppColors.textMain,
+                color: color,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
               ),
@@ -449,179 +714,279 @@ class _SalesPageState extends State<SalesPage> {
     );
   }
 
-  Widget _buildMiniSaleRow(Map<String, dynamic> row) {
-    final product = (row['Наименование'] ??
-        row['Товар'] ??
-        row['productName'] ??
-        row['product'] ??
-        row['name'] ??
-        '')
-        .toString()
-        .trim();
-
-    final displayProduct = product.isEmpty ? 'Без названия' : product;
-
-    final channel = _detectChannel(row);
-    final order = (row['Номер заказа'] ?? '').toString().trim();
-
-    final rrc = _toDouble(row['РРЦ']);
-    final profit = _profit(row);
-
-    final accent = channel == 'Каспий'
-        ? const Color(0xFF4DA3FF)
-        : const Color(0xFF22C55E);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            displayProduct,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
+  Widget _exportButton({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    required bool loading,
+  }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: loading ? null : onTap,
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.28)),
           ),
-          const SizedBox(height: 2),
-          Text(
-            '$channel'
-                '${order.isNotEmpty ? " • №$order" : ""}'
-                ' • ${_formatMoney(rrc)} ₸'
-                ' • приб. ${_formatMoney(profit)} ₸',
-            style: TextStyle(
-              color: profit >= 0
-                  ? AppColors.success
-                  : AppColors.danger,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-  Widget _buildBatchCard(List<Map<String, dynamic>> rows) {
-    final batch = _batchId(rows.first);
-    final isDeleting = _deletingBatches.contains(batch);
-
-    final date = (rows.first['Дата'] ?? '').toString().trim();
-
-    final totalRevenue =
-    rows.fold<double>(0, (sum, row) => sum + _toDouble(row['РРЦ']));
-    final totalProfit =
-    rows.fold<double>(0, (sum, row) => sum + _profit(row));
-
-    final channels = rows.map(_detectChannel).toSet().join(' / ');
-
-    final product = (rows.first['Наименование'] ??
-        rows.first['Товар'] ??
-        rows.first['productName'] ??
-        rows.first['product'] ??
-        rows.first['name'] ??
-        'Без названия')
-        .toString()
-        .trim();
-
-    final shortBatch = batch.replaceAll('BATCH-', '#');
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: AppUi.cardDecoration(
-        radius: 18,
-        borderColor: AppColors.stroke.withOpacity(0.8),
-        shadows: const [],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Накладная $shortBatch от $date',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
+          child: loading
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: color,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    rows.length == 1 ? product : '$product + ещё ${rows.length - 1}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: color, size: 18),
+                    const SizedBox(width: 7),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$channels • выручка ${_formatMoney(totalRevenue)} ₸ • прибыль ${_formatMoney(totalProfit)} ₸',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: totalProfit >= 0
-                          ? AppColors.success
-                          : AppColors.danger,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            isDeleting
-                ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.danger,
-              ),
-            )
-                : IconButton(
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 32,
-                minHeight: 32,
-              ),
-              onPressed: () => _deleteBatch(rows),
-              icon: const Icon(
-                Icons.delete_outline,
-                color: AppColors.danger,
-                size: 21,
-              ),
-            ),
-          ],
+                  ],
+                ),
         ),
       ),
     );
   }
 
+  Widget _buildBatchCard(List<Map<String, dynamic>> rows) {
+    final batch = _batchId(rows.first);
+    final isDeleting = _deletingBatches.contains(batch);
+    final isExpanded = _expandedBatches.contains(batch);
+    final pdfLoading = _exportingBatches.contains('$batch-pdf');
+    final excelLoading = _exportingBatches.contains('$batch-excel');
 
+    final date = (rows.first['Дата'] ?? '').toString().trim();
+
+    final totalRevenue =
+        rows.fold<double>(0, (sum, row) => sum + _toDouble(row['РРЦ']));
+
+    final totalProfit =
+        rows.fold<double>(0, (sum, row) => sum + _profit(row));
+
+    final channels = rows.map(_detectChannel).toSet().join(' / ');
+    final product = _productName(rows.first);
+    final client = _clientName(rows);
+    final shortBatch = batch.replaceAll('BATCH-', '#');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: AppUi.cardDecoration(
+        radius: 20,
+        borderColor: AppColors.stroke.withOpacity(0.8),
+        shadows: const [],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () {
+          setState(() {
+            if (isExpanded) {
+              _expandedBatches.remove(batch);
+            } else {
+              _expandedBatches.add(batch);
+            }
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Накладная $shortBatch от $date',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (client.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            client,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Text(
+                          rows.length == 1
+                              ? product
+                              : '$product + ещё ${rows.length - 1}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '$channels • выручка ${_formatMoney(totalRevenue)} ₸ • прибыль ${_formatMoney(totalProfit)} ₸',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: totalProfit >= 0
+                                ? AppColors.success
+                                : AppColors.danger,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    children: [
+                      Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(height: 4),
+                      isDeleting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.danger,
+                              ),
+                            )
+                          : IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 32,
+                                minHeight: 32,
+                              ),
+                              onPressed: () => _deleteBatch(rows),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: AppColors.danger,
+                                size: 21,
+                              ),
+                            ),
+                    ],
+                  ),
+                ],
+              ),
+              if (isExpanded) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.stroke.withOpacity(0.6),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Состав накладной',
+                        style: TextStyle(
+                          color: AppColors.textMain,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _tableHeader(),
+                      ...List.generate(rows.length, (index) {
+                        return _tableRow(rows[index], index);
+                      }),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _summaryRow(
+                            'Итого',
+                            totalRevenue,
+                            AppColors.textMain,
+                          ),
+                          const SizedBox(width: 8),
+                          _summaryRow(
+                            'Прибыль',
+                            totalProfit,
+                            totalProfit >= 0
+                                ? AppColors.success
+                                : AppColors.danger,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _exportButton(
+                            title: 'PDF',
+                            icon: Icons.picture_as_pdf_outlined,
+                            color: AppColors.danger,
+                            loading: pdfLoading,
+                            onTap: () => _exportInvoice(
+                              rows: rows,
+                              type: 'pdf',
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          _exportButton(
+                            title: 'EXCEL',
+                            icon: Icons.table_chart_outlined,
+                            color: const Color(0xFF22C55E),
+                            loading: excelLoading,
+                            onTap: () => _exportInvoice(
+                              rows: rows,
+                              type: 'excel',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final totalRevenue =
-    _filteredSales.fold<double>(0, (sum, row) => sum + _toDouble(row['РРЦ']));
+        _filteredSales.fold<double>(0, (sum, row) => sum + _toDouble(row['РРЦ']));
 
     final totalProfit =
-    _filteredSales.fold<double>(0, (sum, row) => sum + _profit(row));
+        _filteredSales.fold<double>(0, (sum, row) => sum + _profit(row));
 
     final kaspiCount =
         _filteredSales.where((row) => _detectChannel(row) == 'Каспий').length;
@@ -653,353 +1018,354 @@ class _SalesPageState extends State<SalesPage> {
       ),
       body: _loading
           ? const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      )
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
           : _error.isNotEmpty
-          ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            _error,
-            style: const TextStyle(color: AppColors.danger),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
-          : RefreshIndicator(
-        onRefresh: _loadSales,
-        color: AppColors.primary,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: AppUi.cardDecoration(
-                    radius: 28,
-                    borderColor: AppColors.primary.withOpacity(0.22),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white.withOpacity(0.02),
-                        AppColors.primary.withOpacity(0.07),
-                      ],
-                    ),
-                    shadows: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.12),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Список продаж',
-                        style: TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Продажи теперь сгруппированы по накладным.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.receipt_long_outlined,
-                        title: 'Накладных',
-                        value: groups.length.toString(),
-                        accentColors: const [
-                          Color(0xFF4DA3FF),
-                          Color(0xFF2D7DFF),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.trending_up,
-                        title: 'Прибыль',
-                        value: '${_formatMoney(totalProfit)} ₸',
-                        accentColors: const [
-                          Color(0xFF22C55E),
-                          Color(0xFF16A34A),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                AppUi.metricCard(
-                  icon: Icons.payments_outlined,
-                  title: 'Выручка',
-                  value: '${_formatMoney(totalRevenue)} ₸',
-                  accentColors: const [
-                    Color(0xFF8B5CF6),
-                    Color(0xFF6D28D9),
-                  ],
-                  compact: true,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.storefront_outlined,
-                        title: 'Каспий',
-                        value: kaspiCount.toString(),
-                        accentColors: const [
-                          Color(0xFF06B6D4),
-                          Color(0xFF0891B2),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppUi.metricCard(
-                        icon: Icons.local_shipping_outlined,
-                        title: 'ОПТ',
-                        value: optCount.toString(),
-                        accentColors: const [
-                          Color(0xFFF59E0B),
-                          Color(0xFFD97706),
-                        ],
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  decoration: AppUi.cardDecoration(radius: 22),
+              ? Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: _searchController,
-                          style: const TextStyle(
-                            color: AppColors.textMain,
-                          ),
-                          decoration: InputDecoration(
-                            hintText:
-                            'Поиск по товару / заказу / клиенту / каналу',
-                            hintStyle: const TextStyle(
-                              color: AppColors.textSecondary,
-                            ),
-                            prefixIcon: const Icon(
-                              Icons.search,
-                              color: AppColors.textSecondary,
-                            ),
-                            filled: true,
-                            fillColor: AppColors.bg,
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: const BorderSide(
-                                color: AppColors.stroke,
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      _error,
+                      style: const TextStyle(color: AppColors.danger),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadSales,
+                  color: AppColors.primary,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: AppUi.cardDecoration(
+                              radius: 28,
+                              borderColor: AppColors.primary.withOpacity(0.22),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withOpacity(0.02),
+                                  AppColors.primary.withOpacity(0.07),
+                                ],
                               ),
+                              shadows: [
+                                BoxShadow(
+                                  color: AppColors.primary.withOpacity(0.12),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
                             ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                              ),
+                            child: const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Список продаж',
+                                  style: TextStyle(
+                                    color: AppColors.textMain,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Открой накладную, чтобы посмотреть состав и повторно сформировать PDF/Excel.',
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
+                          const SizedBox(height: 16),
+                          Row(
                             children: [
-                              AppUi.periodButton(
-                                title: 'Сегодня',
-                                selected:
-                                _selectedPeriod == 'Сегодня',
-                                onTap: () {
-                                  setState(() {
-                                    _selectedPeriod = 'Сегодня';
-                                    _applyPresetPeriod(
-                                      'Сегодня',
-                                      refresh: false,
-                                    );
-                                  });
-                                  _applyFilters();
-                                },
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.receipt_long_outlined,
+                                  title: 'Накладных',
+                                  value: groups.length.toString(),
+                                  accentColors: const [
+                                    Color(0xFF4DA3FF),
+                                    Color(0xFF2D7DFF),
+                                  ],
+                                  compact: true,
+                                ),
                               ),
-                              const SizedBox(width: 8),
-                              AppUi.periodButton(
-                                title: '7 дней',
-                                selected: _selectedPeriod == '7 дней',
-                                onTap: () {
-                                  setState(() {
-                                    _selectedPeriod = '7 дней';
-                                    _applyPresetPeriod(
-                                      '7 дней',
-                                      refresh: false,
-                                    );
-                                  });
-                                  _applyFilters();
-                                },
-                                accentColors: const [
-                                  Color(0xFF8B5CF6),
-                                  Color(0xFF6D28D9),
-                                ],
-                              ),
-                              const SizedBox(width: 8),
-                              AppUi.periodButton(
-                                title: '30 дней',
-                                selected:
-                                _selectedPeriod == '30 дней',
-                                onTap: () {
-                                  setState(() {
-                                    _selectedPeriod = '30 дней';
-                                    _applyPresetPeriod(
-                                      '30 дней',
-                                      refresh: false,
-                                    );
-                                  });
-                                  _applyFilters();
-                                },
-                                accentColors: const [
-                                  Color(0xFF22C55E),
-                                  Color(0xFF16A34A),
-                                ],
-                              ),
-                              const SizedBox(width: 8),
-                              AppUi.periodButton(
-                                title: 'Всё',
-                                selected: _selectedPeriod == 'Всё',
-                                onTap: () {
-                                  setState(() {
-                                    _selectedPeriod = 'Всё';
-                                    _applyPresetPeriod(
-                                      'Всё',
-                                      refresh: false,
-                                    );
-                                  });
-                                  _applyFilters();
-                                },
-                                accentColors: const [
-                                  Color(0xFFF59E0B),
-                                  Color(0xFFD97706),
-                                ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.trending_up,
+                                  title: 'Прибыль',
+                                  value: '${_formatMoney(totalProfit)} ₸',
+                                  accentColors: const [
+                                    Color(0xFF22C55E),
+                                    Color(0xFF16A34A),
+                                  ],
+                                  compact: true,
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                borderRadius:
-                                BorderRadius.circular(18),
-                                onTap: () => _pickDate(isFrom: true),
-                                child: AppUi.dateBox(
-                                  title: 'С',
-                                  value: _dateFrom == null
-                                      ? 'Не выбрано'
-                                      : '${_dateFrom!.day.toString().padLeft(2, '0')}.${_dateFrom!.month.toString().padLeft(2, '0')}.${_dateFrom!.year}',
+                          const SizedBox(height: 12),
+                          AppUi.metricCard(
+                            icon: Icons.payments_outlined,
+                            title: 'Выручка',
+                            value: '${_formatMoney(totalRevenue)} ₸',
+                            accentColors: const [
+                              Color(0xFF8B5CF6),
+                              Color(0xFF6D28D9),
+                            ],
+                            compact: true,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.storefront_outlined,
+                                  title: 'Каспий',
+                                  value: kaspiCount.toString(),
+                                  accentColors: const [
+                                    Color(0xFF06B6D4),
+                                    Color(0xFF0891B2),
+                                  ],
+                                  compact: true,
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: InkWell(
-                                borderRadius:
-                                BorderRadius.circular(18),
-                                onTap: () => _pickDate(isFrom: false),
-                                child: AppUi.dateBox(
-                                  title: 'По',
-                                  value: _dateTo == null
-                                      ? 'Не выбрано'
-                                      : '${_dateTo!.day.toString().padLeft(2, '0')}.${_dateTo!.month.toString().padLeft(2, '0')}.${_dateTo!.year}',
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: AppUi.metricCard(
+                                  icon: Icons.local_shipping_outlined,
+                                  title: 'ОПТ',
+                                  value: optCount.toString(),
+                                  accentColors: const [
+                                    Color(0xFFF59E0B),
+                                    Color(0xFFD97706),
+                                  ],
+                                  compact: true,
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: _selectedChannel,
-                          dropdownColor: AppColors.card,
-                          style: const TextStyle(
-                            color: AppColors.textMain,
+                            ],
                           ),
-                          iconEnabledColor: AppColors.textSecondary,
-                          decoration: InputDecoration(
-                            filled: true,
-                            fillColor: AppColors.bg,
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: const BorderSide(
-                                color: AppColors.stroke,
+                          const SizedBox(height: 18),
+                          Container(
+                            decoration: AppUi.cardDecoration(radius: 22),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                children: [
+                                  TextField(
+                                    controller: _searchController,
+                                    style: const TextStyle(
+                                      color: AppColors.textMain,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          'Поиск по товару / заказу / клиенту / каналу',
+                                      hintStyle: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      prefixIcon: const Icon(
+                                        Icons.search,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      filled: true,
+                                      fillColor: AppColors.bg,
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                        borderSide: const BorderSide(
+                                          color: AppColors.stroke,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                        borderSide: const BorderSide(
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        AppUi.periodButton(
+                                          title: 'Сегодня',
+                                          selected:
+                                              _selectedPeriod == 'Сегодня',
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedPeriod = 'Сегодня';
+                                              _applyPresetPeriod(
+                                                'Сегодня',
+                                                refresh: false,
+                                              );
+                                            });
+                                            _applyFilters();
+                                          },
+                                        ),
+                                        const SizedBox(width: 8),
+                                        AppUi.periodButton(
+                                          title: '7 дней',
+                                          selected:
+                                              _selectedPeriod == '7 дней',
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedPeriod = '7 дней';
+                                              _applyPresetPeriod(
+                                                '7 дней',
+                                                refresh: false,
+                                              );
+                                            });
+                                            _applyFilters();
+                                          },
+                                          accentColors: const [
+                                            Color(0xFF8B5CF6),
+                                            Color(0xFF6D28D9),
+                                          ],
+                                        ),
+                                        const SizedBox(width: 8),
+                                        AppUi.periodButton(
+                                          title: '30 дней',
+                                          selected:
+                                              _selectedPeriod == '30 дней',
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedPeriod = '30 дней';
+                                              _applyPresetPeriod(
+                                                '30 дней',
+                                                refresh: false,
+                                              );
+                                            });
+                                            _applyFilters();
+                                          },
+                                          accentColors: const [
+                                            Color(0xFF22C55E),
+                                            Color(0xFF16A34A),
+                                          ],
+                                        ),
+                                        const SizedBox(width: 8),
+                                        AppUi.periodButton(
+                                          title: 'Всё',
+                                          selected: _selectedPeriod == 'Всё',
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedPeriod = 'Всё';
+                                              _applyPresetPeriod(
+                                                'Всё',
+                                                refresh: false,
+                                              );
+                                            });
+                                            _applyFilters();
+                                          },
+                                          accentColors: const [
+                                            Color(0xFFF59E0B),
+                                            Color(0xFFD97706),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          onTap: () => _pickDate(isFrom: true),
+                                          child: AppUi.dateBox(
+                                            title: 'С',
+                                            value: _dateFrom == null
+                                                ? 'Не выбрано'
+                                                : '${_dateFrom!.day.toString().padLeft(2, '0')}.${_dateFrom!.month.toString().padLeft(2, '0')}.${_dateFrom!.year}',
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(18),
+                                          onTap: () => _pickDate(isFrom: false),
+                                          child: AppUi.dateBox(
+                                            title: 'По',
+                                            value: _dateTo == null
+                                                ? 'Не выбрано'
+                                                : '${_dateTo!.day.toString().padLeft(2, '0')}.${_dateTo!.month.toString().padLeft(2, '0')}.${_dateTo!.year}',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  DropdownButtonFormField<String>(
+                                    value: _selectedChannel,
+                                    dropdownColor: AppColors.card,
+                                    style: const TextStyle(
+                                      color: AppColors.textMain,
+                                    ),
+                                    iconEnabledColor: AppColors.textSecondary,
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: AppColors.bg,
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                        borderSide: const BorderSide(
+                                          color: AppColors.stroke,
+                                        ),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                        borderSide: const BorderSide(
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'Все',
+                                        child: Text('Все'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'Каспий',
+                                        child: Text('Каспий'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'ОПТ',
+                                        child: Text('ОПТ'),
+                                      ),
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedChannel = value ?? 'Все';
+                                      });
+                                      _applyFilters();
+                                    },
+                                  ),
+                                ],
                               ),
                             ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(18),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                              ),
-                            ),
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'Все',
-                              child: Text('Все'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'Каспий',
-                              child: Text('Каспий'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'ОПТ',
-                              child: Text('ОПТ'),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedChannel = value ?? 'Все';
-                            });
-                            _applyFilters();
-                          },
-                        ),
-                      ],
+                          const SizedBox(height: 18),
+                          if (_filteredSales.isEmpty)
+                            AppUi.emptyBlock('По выбранным фильтрам продаж нет')
+                          else
+                            ...groups.map(_buildBatchCard),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 18),
-                if (_filteredSales.isEmpty)
-                  AppUi.emptyBlock('По выбранным фильтрам продаж нет')
-                else
-                  ...groups.map(_buildBatchCard),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -67,7 +67,7 @@ class _StockPageState extends State<StockPage> {
   }
 
   Future<void> _downloadStockPdf() async {
-    final uri = Uri.parse('http://192.168.1.248:8080/stock-report/pdf');
+    final uri = Uri.parse('https://profit-app-7u44.onrender.com/stock-report/pdf');
 
     await launchUrl(
       uri,

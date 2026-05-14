@@ -38,7 +38,7 @@ class _HomePageState extends State<HomePage> {
     _loadAnalytics();
   }
 
-  String get _baseUrl => 'http://192.168.1.248:8080';
+  String get _baseUrl => 'https://profit-app-7u44.onrender.com';
 
   Future<void> _loadAnalytics() async {
     setState(() {

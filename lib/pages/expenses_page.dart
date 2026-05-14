@@ -16,7 +16,7 @@ class ExpensesPage extends StatefulWidget {
 }
 
 class _ExpensesPageState extends State<ExpensesPage> {
-  static const String baseUrl = 'http://192.168.1.248:8080';
+  static const String baseUrl = 'https://profit-app-7u44.onrender.com';
 
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();

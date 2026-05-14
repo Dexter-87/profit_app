@@ -51,38 +51,72 @@ class MainNavigationPage extends StatefulWidget {
 class _MainNavigationPageState extends State<MainNavigationPage> {
   int _index = 0;
 
+  final ScrollController _dockController = ScrollController();
+
+  final List<_NavItem> _items = const [
+    _NavItem('Главная', Icons.home_rounded, Colors.blue),
+    _NavItem('Продажи', Icons.shopping_bag_rounded, Colors.cyan),
+    _NavItem('Аналитика', Icons.bar_chart_rounded, Colors.purpleAccent),
+    _NavItem('Заказ', Icons.add_box_rounded, Colors.greenAccent),
+    _NavItem('Модель', Icons.dashboard_rounded, Colors.orangeAccent),
+    _NavItem('План', Icons.flag_rounded, Colors.amber),
+    _NavItem('Расходы', Icons.receipt_long_rounded, Colors.redAccent),
+    _NavItem('Остатки', Icons.inventory_2_rounded, Colors.tealAccent),
+    _NavItem('Доп.', Icons.handshake_rounded, Colors.pinkAccent),
+  ];
+
   void _go(int i) {
-    setState(() {
-      _index = i;
-    });
+    setState(() => _index = i);
   }
 
-  Widget _dockIcon(IconData icon, int index, Color color) {
+  Widget _dockButton(_NavItem item, int index) {
     final active = _index == index;
 
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _go(index),
-        child: AnimatedScale(
-          scale: active ? 1.18 : 1.0,
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          child: Container(
-            height: 34,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              color: active ? color.withOpacity(0.18) : Colors.transparent,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: Icon(
-              icon,
-              color: active ? color : Colors.white54,
-              size: active ? 20 : 18,
-            ),
+    return GestureDetector(
+      onTap: () => _go(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        width: active ? 104 : 82,
+        height: 58,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: active ? item.color.withOpacity(0.20) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active ? item.color.withOpacity(0.35) : Colors.transparent,
           ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              item.icon,
+              color: active ? item.color : Colors.white54,
+              size: active ? 26 : 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: active ? Colors.white : Colors.white54,
+                fontSize: 10,
+                fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _dockController.dispose();
+    super.dispose();
   }
 
   @override
@@ -105,31 +139,35 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
-          height: 54,
-          margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+          height: 76,
+          margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           decoration: BoxDecoration(
-            color: AppColors.card.withOpacity(0.92),
-            borderRadius: BorderRadius.circular(24),
+            color: AppColors.card.withOpacity(0.94),
+            borderRadius: BorderRadius.circular(26),
             border: Border.all(
               color: Colors.white.withOpacity(0.08),
             ),
           ),
-          child: Row(
-            children: [
-              _dockIcon(Icons.home_rounded, 0, Colors.blue),
-              _dockIcon(Icons.shopping_bag_rounded, 1, Colors.cyan),
-              _dockIcon(Icons.bar_chart_rounded, 2, Colors.purpleAccent),
-              _dockIcon(Icons.add_box_rounded, 3, Colors.greenAccent),
-              _dockIcon(Icons.dashboard_rounded, 4, Colors.orangeAccent),
-              _dockIcon(Icons.flag_rounded, 5, Colors.amber),
-              _dockIcon(Icons.receipt_long_rounded, 6, Colors.redAccent),
-              _dockIcon(Icons.inventory_2_rounded, 7, Colors.tealAccent),
-              _dockIcon(Icons.handshake_rounded, 8, Colors.pinkAccent),
-            ],
+          child: ListView.builder(
+            controller: _dockController,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: _items.length,
+            itemBuilder: (context, index) {
+              return _dockButton(_items[index], index);
+            },
           ),
         ),
       ),
     );
   }
+}
+
+class _NavItem {
+  final String title;
+  final IconData icon;
+  final Color color;
+
+  const _NavItem(this.title, this.icon, this.color);
 }

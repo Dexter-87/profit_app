@@ -170,7 +170,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final from = _formatApiDate(_dateFrom);
     final to = _formatApiDate(_dateTo);
 
-    final url = 'http://192.168.1.248:8080/$endpoint/pdf?dateFrom=$from&dateTo=$to';
+    final url = 'https://profit-app-7u44.onrender.com/$endpoint/pdf?dateFrom=$from&dateTo=$to';
 
     launchUrl(
       Uri.parse(url),
