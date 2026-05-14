@@ -752,6 +752,14 @@ app.get('/sales', async (req, res) => {
       Клиент: row.client || '',
     }));
 
+sales.sort((a, b) => {
+  const da = parseDate(a.Дата);
+  const db = parseDate(b.Дата);
+
+  if (!da || !db) return 0;
+
+  return db - da;
+});
     return res.json(sales);
   }
     const rows = await getRowsFromSpreadsheet(
