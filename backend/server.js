@@ -396,7 +396,57 @@ app.get('/prices', async (req, res) => {
     });
   }
 });
+app.post('/import-prices-to-supabase', async (req, res) => {
+  try {
+    const teegRows = await getRowsFromSpreadsheet(
+      TEEG_PRICE_SPREADSHEET_ID,
+      TEEG_PRICE_RANGE
+    );
 
+    const aristonRows = await getRowsFromSpreadsheet(
+      ARISTON_PRICE_SPREADSHEET_ID,
+      ARISTON_PRICE_RANGE
+    );
+
+    const normalizeRows = (rows, source) => {
+      return rows
+        .filter((row) => row.length >= 4)
+        .map((row) => ({
+          brand: row[0] || '',
+          model: row[1] || '',
+          price_type: row[2] || '',
+          price: Number(row[3]) || 0,
+          cost: Number(row[4]) || 0,
+          source,
+          full_name: `${row[0] || ''} ${row[1] || ''}`.trim(),
+        }));
+    };
+
+    const allPrices = [
+      ...normalizeRows(teegRows, 'TEEG'),
+      ...normalizeRows(aristonRows, 'ARISTON'),
+    ];
+
+    await supabase.from('prices').delete().neq('id', 0);
+
+    const { error } = await supabase
+      .from('prices')
+      .insert(allPrices);
+
+    if (error) throw error;
+
+    res.json({
+      ok: true,
+      inserted: allPrices.length,
+    });
+  } catch (error) {
+    console.error('Ошибка импорта прайсов:', error);
+
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
 // ================= ДОП ДОХОДЫ =================
 
 app.get('/side-income', async (req, res) => {
