@@ -179,8 +179,12 @@ class _SalesPageState extends State<SalesPage> {
           .toList()
         ..sort((a, b) => b.compareTo(a));
 
-      for (final rowIndex in indexes) {
-        await ApiService.deleteSale(rowIndex);
+      if (isLegacy) {
+        for (final rowIndex in indexes) {
+          await ApiService.deleteSale(rowIndex);
+        }
+      } else {
+        await ApiService.deleteSaleByBatch(batch);
       }
 
       _showMessage(isLegacy ? 'Продажа удалена' : 'Накладная удалена');

@@ -86,6 +86,20 @@ class ApiService {
     }
   }
 
+static Future<void> deleteSaleByBatch(String batchId) async {
+  final response = await http.post(
+    Uri.parse('$baseUrl/delete-sale'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'batchId': batchId,
+    }),
+  );
+
+  if (response.statusCode != 200) {
+    throw Exception(response.body);
+  }
+}
+
   static Future<void> addSale({
     required String name,
     required int quantity,

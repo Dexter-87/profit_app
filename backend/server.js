@@ -1,4 +1,6 @@
-﻿const supabase = require('./supabase');
+﻿process.env.TZ = 'Asia/Almaty';
+
+const supabase = require('./supabase');
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
@@ -1007,13 +1009,49 @@ try {
 
 app.post('/delete-sale', async (req, res) => {
   try {
-    const { rowIndex } = req.body;
+    const { rowIndex, batchId } = req.body;
 
-    if (!rowIndex) {
-      return res.status(400).json({ error: 'Нет rowIndex' });
+    if (!rowIndex && !batchId) {
+      return res.status(400).json({ error: 'Нет rowIndex или batchId' });
     }
 
     const sheetsApi = await getSheetsApi();
+
+    const rows = await getRowsFromSpreadsheet(
+      SALES_SPREADSHEET_ID,
+      SALES_RANGE
+    );
+
+    let indexesToDelete = [];
+
+    if (batchId && !String(batchId).startsWith('ROW-')) {
+      indexesToDelete = rows
+        .filter((row) => {
+          const sheetBatchId = getCell(
+            row,
+            ['batchId', 'BatchId', 'BATCHID', 'Накладная'],
+            14
+          );
+
+          return String(sheetBatchId).trim() === String(batchId).trim();
+        })
+        .map((row) => Number(row.__index))
+        .filter((index) => index > 1);
+    } else if (rowIndex) {
+      indexesToDelete = [Number(rowIndex)];
+    }
+
+    indexesToDelete = [...new Set(indexesToDelete)]
+      .filter((index) => index > 1)
+      .sort((a, b) => b - a);
+
+    if (indexesToDelete.length === 0) {
+      return res.status(404).json({
+        error: 'Строки для удаления не найдены',
+        batchId,
+        rowIndex,
+      });
+    }
 
     const meta = await sheetsApi.spreadsheets.get({
       spreadsheetId: SALES_SPREADSHEET_ID,
@@ -1030,22 +1068,41 @@ app.post('/delete-sale', async (req, res) => {
     await sheetsApi.spreadsheets.batchUpdate({
       spreadsheetId: SALES_SPREADSHEET_ID,
       requestBody: {
-        requests: [
-          {
-            deleteDimension: {
-              range: {
-                sheetId,
-                dimension: 'ROWS',
-                startIndex: Number(rowIndex) - 1,
-                endIndex: Number(rowIndex),
-              },
+        requests: indexesToDelete.map((index) => ({
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: 'ROWS',
+              startIndex: index - 1,
+              endIndex: index,
             },
           },
-        ],
+        })),
       },
     });
 
-    res.json({ ok: true });
+    if (batchId && !String(batchId).startsWith('ROW-')) {
+      const { error: supabaseError } = await supabase
+        .from('sales')
+        .delete()
+        .eq('batch_id', String(batchId));
+
+      if (supabaseError) throw supabaseError;
+    } else if (rowIndex) {
+      const { error: supabaseError } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', Number(rowIndex));
+
+      if (supabaseError) throw supabaseError;
+    }
+
+    res.json({
+      ok: true,
+      deleted: indexesToDelete.length,
+      batchId: batchId || '',
+      rowIndex: rowIndex || '',
+    });
   } catch (error) {
     console.error('Ошибка /delete-sale:', error);
     res.status(500).json({
