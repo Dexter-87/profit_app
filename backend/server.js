@@ -826,6 +826,7 @@ app.get('/import-sales-to-supabase', async (req, res) => {
       profit: toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7)),
       comment: getCell(row, ['Комментарий', 'comment'], 8),
       client: getCell(row, ['Клиент', 'client'], 13),
+      batch_id: getCell(row, ['batchId', 'BatchId', 'BATCHID', 'Накладная'], 14),
     })).filter((row) => row.product && row.date);
 
     const { error: clearError } = await supabase
