@@ -396,7 +396,7 @@ app.get('/prices', async (req, res) => {
     });
   }
 });
-app.post('/import-prices-to-supabase', async (req, res) => {
+app.get('/import-prices-to-supabase', async (req, res) => {
   try {
     const teegRows = await getRowsFromSpreadsheet(
       TEEG_PRICE_SPREADSHEET_ID,
