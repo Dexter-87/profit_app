@@ -1069,12 +1069,24 @@ app.post('/delete-sale', async (req, res) => {
 
       console.log('DELETED FROM SUPABASE:', deletedRows?.length || 0);
     } else if (rowIndex) {
-      const { error: supabaseError } = await supabase
-        .from('sales')
-        .delete()
-        .eq('id', Number(rowIndex));
+      const row = rows.find(
+        (r) => Number(r.__index) === Number(rowIndex)
+      );
 
-      if (supabaseError) throw supabaseError;
+      const singleBatchId = getCell(
+        row,
+        ['batchId', 'BatchId', 'BATCHID', 'Накладная'],
+        14
+      );
+
+      if (singleBatchId) {
+        const { error: supabaseError } = await supabase
+          .from('sales')
+          .delete()
+          .eq('batch_id', String(singleBatchId));
+
+        if (supabaseError) throw supabaseError;
+      }
     }
 
     const meta = await sheetsApi.spreadsheets.get({
