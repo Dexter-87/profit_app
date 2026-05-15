@@ -752,36 +752,29 @@ app.get('/sales', async (req, res) => {
   if (!error && data && data.length > 0) {
     const sales = data.map((row) => ({
       __index: row.id,
+
       Дата: row.date || '',
       Канал: row.channel || '',
+
       Наименование: row.product || '',
       Товар: row.product || '',
-      Модель: row.product || '',
-      Название: row.product || '',
-      productName: row.product || '',
-      product: row.product || '',
-      name: row.product || '',
-      'Номер заказа': row.order_number === 'EMPTY' ? '' : row.order_number || '',
+
+      'Номер заказа': row.order_number === 'EMPTY'
+          ? ''
+          : row.order_number || '',
+
       Себестоимость: row.cost || 0,
       РРЦ: row.price || 0,
-      Цена: row.price || 0,
+
       'Комиссия Kaspi': row.commission || 0,
-      Комиссия: row.commission || 0,
+
       'Чистая прибыль': row.profit || 0,
-      Прибыль: row.profit || 0,
+
       Комментарий: row.comment || '',
       Клиент: row.client || '',
+
+      batchId: row.batch_id || '',
     }));
-
-sales.sort((a, b) => {
-  const da = parseDate(a.Дата);
-  const db = parseDate(b.Дата);
-
-  if (!da || !db) return 0;
-
-  return db - da;
-});
-    return res.json(sales);
   }
     const rows = await getRowsFromSpreadsheet(
       SALES_SPREADSHEET_ID,
@@ -988,6 +981,7 @@ try {
     profit: Number(row[7]) || 0,
     comment: row[8] || '',
     client: row[13] || '',
+    batch_id: row[14] || '',
   }));
 
   const { error: supabaseError } = await supabase
