@@ -410,16 +410,29 @@ app.get('/import-prices-to-supabase', async (req, res) => {
 
     const normalizeRows = (rows, source) => {
       return rows
-        .filter((row) => row.length >= 4)
-        .map((row) => ({
-          brand: row[0] || '',
-          model: row[1] || '',
-          price_type: row[2] || '',
-          price: Number(row[3]) || 0,
-          cost: Number(row[4]) || 0,
-          source,
-          full_name: `${row[0] || ''} ${row[1] || ''}`.trim(),
-        }));
+        .map((row) => {
+          const brand = String(getCell(row, ['Бренд', 'brand'], 0)).trim();
+          const model = String(getCell(row, ['Модель', 'model'], 1)).trim();
+          const priceType = String(
+            getCell(row, ['ТипЦены', 'Тип цены', 'priceType'], 2)
+          ).trim();
+
+          const price = toNumber(getCell(row, ['Цена', 'price'], 3));
+          const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
+
+          const fullName = cleanProductName(`${brand} ${model}`.trim());
+
+          return {
+            brand,
+            model,
+            price_type: priceType,
+            price,
+            cost,
+            source,
+            full_name: fullName,
+          };
+        })
+        .filter((item) => item.model && item.price > 0);
     };
 
     const allPrices = [
