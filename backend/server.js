@@ -1054,12 +1054,20 @@ app.post('/delete-sale', async (req, res) => {
     }
 
     if (batchId && !String(batchId).startsWith('ROW-')) {
-      const { error: supabaseError } = await supabase
+      const cleanBatchId = String(batchId).trim();
+
+      console.log('DELETE SALE BODY:', req.body);
+      console.log('DELETE BATCH ID:', cleanBatchId);
+
+      const { data: deletedRows, error: supabaseError } = await supabase
         .from('sales')
         .delete()
-        .eq('batch_id', String(batchId));
+        .eq('batch_id', cleanBatchId)
+        .select();
 
       if (supabaseError) throw supabaseError;
+
+      console.log('DELETED FROM SUPABASE:', deletedRows?.length || 0);
     } else if (rowIndex) {
       const { error: supabaseError } = await supabase
         .from('sales')
