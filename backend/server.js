@@ -1053,6 +1053,22 @@ app.post('/delete-sale', async (req, res) => {
       });
     }
 
+    if (batchId && !String(batchId).startsWith('ROW-')) {
+      const { error: supabaseError } = await supabase
+        .from('sales')
+        .delete()
+        .eq('batch_id', String(batchId));
+
+      if (supabaseError) throw supabaseError;
+    } else if (rowIndex) {
+      const { error: supabaseError } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', Number(rowIndex));
+
+      if (supabaseError) throw supabaseError;
+    }
+
     const meta = await sheetsApi.spreadsheets.get({
       spreadsheetId: SALES_SPREADSHEET_ID,
     });
@@ -1080,22 +1096,6 @@ app.post('/delete-sale', async (req, res) => {
         })),
       },
     });
-
-    if (batchId && !String(batchId).startsWith('ROW-')) {
-      const { error: supabaseError } = await supabase
-        .from('sales')
-        .delete()
-        .eq('batch_id', String(batchId));
-
-      if (supabaseError) throw supabaseError;
-    } else if (rowIndex) {
-      const { error: supabaseError } = await supabase
-        .from('sales')
-        .delete()
-        .eq('id', Number(rowIndex));
-
-      if (supabaseError) throw supabaseError;
-    }
 
     res.json({
       ok: true,
