@@ -372,24 +372,16 @@ function normalizePriceRows(rows, source) {
 
 app.get('/prices', async (req, res) => {
   try {
-    const teegRows = await getRowsFromSpreadsheet(
-      TEEG_PRICE_SPREADSHEET_ID,
-      TEEG_PRICE_RANGE
-    );
+    const { data, error } = await supabase
+      .from('prices')
+      .select('*');
 
-    const aristonRows = await getRowsFromSpreadsheet(
-      ARISTON_PRICE_SPREADSHEET_ID,
-      ARISTON_PRICE_RANGE
-    );
+    if (error) throw error;
 
-    const prices = [
-      ...normalizePriceRows(teegRows, 'TEEG'),
-      ...normalizePriceRows(aristonRows, 'Ariston'),
-    ];
-
-    res.json(prices);
+    res.json(data);
   } catch (error) {
     console.error('Ошибка /prices:', error);
+
     res.status(500).json({
       error: 'Ошибка загрузки прайсов',
       details: error.message,
