@@ -120,7 +120,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     final set = <String>{};
 
     for (final item in _prices) {
-      final type = (item['priceType'] ?? '').toString().trim();
+      final type = (item['price_Type'] ?? '').toString().trim();
       if (type.isNotEmpty) set.add(type);
     }
 
@@ -146,7 +146,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         final fullName = (item['fullName'] ?? '').toString().toLowerCase();
         final source = (item['source'] ?? '').toString().toLowerCase();
         final priceType =
-            (item['priceType'] ?? '').toString().toLowerCase().trim();
+            (item['price_Type'] ?? '').toString().toLowerCase().trim();
 
         final matchesProduct = brand.contains(query) ||
             model.contains(query) ||
@@ -629,7 +629,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 final brand = (item['brand'] ?? '').toString();
                 final model = (item['model'] ?? '').toString();
                 final source = (item['source'] ?? '').toString();
-                final priceType = (item['priceType'] ?? '').toString();
+                final priceType = (item['price_Type'] ?? '').toString();
                 final price = _toDouble((item['price'] ?? 0).toString());
                 final cost = _toDouble((item['cost'] ?? 0).toString());
 
