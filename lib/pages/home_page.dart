@@ -380,36 +380,34 @@ class _HomePageState extends State<HomePage> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
-                        'главная панель бизнеса',
-                        style: TextStyle(
-                          color: _muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
+
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'главная панель бизнеса',
+                            style: TextStyle(
+                              color: _muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            'Период: текущий месяц',
+                            style: TextStyle(
+                              color: _blue.withOpacity(0.9),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                GestureDetector(
-                  onTap: _loadAnalytics,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color:
-                          Colors.white.withOpacity(0.06),
-                      borderRadius:
-                          BorderRadius.circular(18),
-                    ),
-                    child: Icon(
-                      Icons.refresh_rounded,
-                      color: _text,
-                    ),
-                  ),
-                ),
-              ],
-            ),
 
             const SizedBox(height: 18),
 

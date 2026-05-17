@@ -572,7 +572,11 @@ class _SideIncomePageState extends State<SideIncomePage> {
       totalAlexey += itemTotalAlexey;
     }
 
-    return Scaffold(
+    return GestureDetector(
+      onTap: () {
+        FocusScope.of(context).unfocus();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         backgroundColor: AppColors.bg,
@@ -733,6 +737,7 @@ class _SideIncomePageState extends State<SideIncomePage> {
           ),
         ],
       ),
+     ),
     );
   }
 }
