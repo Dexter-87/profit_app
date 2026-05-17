@@ -1357,7 +1357,7 @@ app.post('/expenses', async (req, res) => {
       const { data, error: supabaseError } = await supabase
         .from('expenses')
         .insert([{
-          date: new Date().toISOString().slice(0, 10),
+          date: parseDateForSupabase(todayRu()),
           title: type || '',
           amount: toNumber(amount),
           type: type || '',

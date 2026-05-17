@@ -359,7 +359,7 @@ class _HomePageState extends State<HomePage> {
   Widget _body(BuildContext context) {
     final totalProfit = _toDouble(_analytics?['totalProfit']);
     final expenses = _toDouble(_analytics?['expenses']);
-    final clean = totalProfit - expenses;
+    final clean = _toDouble(_analytics?['netProfit']);
 
     return RefreshIndicator(
       onRefresh: _loadAnalytics,
