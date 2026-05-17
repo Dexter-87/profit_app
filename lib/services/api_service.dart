@@ -144,10 +144,12 @@ static Future<void> deleteSaleByBatch(String batchId) async {
 
     if (dateFrom != null && dateFrom.isNotEmpty) {
       query['dateFrom'] = dateFrom;
+      query['date_from'] = dateFrom;
     }
 
     if (dateTo != null && dateTo.isNotEmpty) {
       query['dateTo'] = dateTo;
+      query['date_to'] = dateTo;
     }
 
     if (brand != null &&
@@ -210,6 +212,30 @@ static Future<void> deleteSaleByBatch(String batchId) async {
       jsonDecode(response.body),
     );
   }
+
+static Future<void> savePlan({
+  required String month,
+  required num planProfit,
+  required num planKaspi,
+  required num planOpt,
+}) async {
+  final response = await http.post(
+    Uri.parse('$baseUrl/plan'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'Месяц': month,
+      'План': planProfit,
+      'ПланКаспий': planKaspi,
+      'ПланОПТ': planOpt,
+    }),
+  );
+
+  if (response.statusCode != 200) {
+    throw Exception(
+      'Ошибка сохранения плана: ${response.body}',
+    );
+  }
+}
 
   static Future<List<Map<String, dynamic>>> fetchInvestments() async {
     final response = await http.get(

@@ -1433,7 +1433,20 @@ app.delete('/stock/:rowIndex', async (req, res) => {
 
 app.get('/plan', async (req, res) => {
   try {
-    const rows = await getRows(PLAN_RANGE);
+    const { data, error } = await supabase
+      .from('plan')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (error) throw error;
+
+    const rows = (data || []).map((r) => ({
+      Месяц: r.month || '',
+      План: r.plan_profit || 0,
+      ПланКаспий: r.plan_kaspi || 0,
+      ПланОПТ: r.plan_opt || 0,
+    }));
+
     res.json(rows);
   } catch (error) {
     console.error('Ошибка /plan:', error);
@@ -1444,6 +1457,47 @@ app.get('/plan', async (req, res) => {
   }
 });
 
+app.post('/plan', async (req, res) => {
+  try {
+    const {
+      month,
+      plan_profit,
+      plan_kaspi,
+      plan_opt,
+      План,
+      ПланКаспий,
+      ПланОПТ,
+    } = req.body;
+
+    const monthName = month || req.body['Месяц'] || '';
+
+    if (!monthName) {
+      return res.status(400).json({ error: 'Не указан месяц' });
+    }
+
+    const payload = {
+      month: monthName,
+      plan_profit: Number(plan_profit ?? План ?? 0),
+      plan_kaspi: Number(plan_kaspi ?? ПланКаспий ?? 0),
+      plan_opt: Number(plan_opt ?? ПланОПТ ?? 0),
+    };
+
+    const { data, error } = await supabase
+      .from('plan')
+      .upsert(payload, { onConflict: 'month' })
+      .select();
+
+    if (error) throw error;
+
+    res.json({ ok: true, data });
+  } catch (error) {
+    console.error('Ошибка /plan POST:', error);
+    res.status(500).json({
+      error: 'Ошибка сохранения плана',
+      details: error.message,
+    });
+  }
+});
 // ================= МОДЕЛЬ =================
 
 app.get('/distribution', async (req, res) => {
