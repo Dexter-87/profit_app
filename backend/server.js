@@ -1806,8 +1806,8 @@ async function calculateAnalytics(req, topLimit = 5) {
     const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
     const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
 
-    const profitFromSheet = toNumber(getCell(row, ['Чистая прибыль', 'Прибыль', 'profit'], 7));
-    const profit = profitFromSheet !== 0 ? profitFromSheet : rrc - cost - commission;
+    const calculatedProfit = rrc - cost - commission;
+    const profit = calculatedProfit;
 
     const shares = selectedModel === 'capital_work'
       ? {
