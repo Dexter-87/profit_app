@@ -1635,10 +1635,58 @@ async function calculateAnalytics(req, topLimit = 5) {
   const from = dateFrom ? parseDate(dateFrom) : null;
   const to = dateTo ? parseDate(dateTo) : null;
 
-  const salesRows = await getRowsFromSpreadsheet(SALES_SPREADSHEET_ID, SALES_RANGE);
-  const expenseRows = await getRows(EXPENSES_RANGE);
-  const distributionRows = await getRows(DISTRIBUTION_RANGE);
-  const planRows = await getRows(PLAN_RANGE);
+  const { data: salesRowsRaw } = await supabase
+    .from('sales')
+    .select('*');
+
+  const { data: expenseRowsRaw } = await supabase
+    .from('expenses')
+    .select('*');
+
+  const { data: distributionRowsRaw } = await supabase
+    .from('distribution')
+    .select('*');
+
+  const { data: planRowsRaw } = await supabase
+    .from('plan')
+    .select('*');
+
+  const salesRows = (salesRowsRaw || []).map((row) => ({
+    'Дата': row.date,
+    'Канал': row.channel,
+    'Наименование': row.product,
+    'Номер заказа': row.order_number,
+    'Себестоимость': row.cost,
+    'РРЦ': row.price,
+    'Комиссия Kaspi': row.commission,
+    'Чистая прибыль': row.profit,
+    'Комментарий': row.comment,
+    'Клиент': row.client,
+  }));
+
+  const expenseRows = (expenseRowsRaw || []).map((row) => ({
+    'Дата': row.date,
+    'Сумма': row.amount,
+    'Тип': row.type,
+    'Комментарий': row.comment,
+    'Владелец': row.owner,
+  }));
+
+  const distributionRows = (distributionRowsRaw || []).map((row) => ({
+    metric: row.metric,
+    stas: row.stas,
+    alexey: row.alexey,
+    total: row.total,
+    model: row.model,
+  }));
+
+  const planRows = (planRowsRaw || []).map((row) => ({
+    'Месяц': row.month,
+    'План': row.plan_profit,
+    'ПланКаспий': row.plan_kaspi,
+    'ПланОПТ': row.plan_opt,
+  }));
+
   const sideIncomeRows = await getRows(SIDE_INCOME_RANGE);
 
   const capitalWorkShares = getCapitalWorkShares(distributionRows);
