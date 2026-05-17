@@ -815,12 +815,78 @@ app.delete('/side-income/:rowIndex', async (req, res) => {
       return res.status(400).json({ error: 'Неверный id' });
     }
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from('side_income')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select();
 
     if (error) throw error;
+
+    const deleted = deletedRows && deletedRows.length > 0
+      ? deletedRows[0]
+      : null;
+
+    if (deleted) {
+      const rowsResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId: MODEL_SPREADSHEET_ID,
+        range: SIDE_INCOME_RANGE,
+      });
+
+      const rows = rowsResponse.data.values || [];
+
+      const targetIndex = rows.findIndex((row, index) => {
+        if (index === 0) return false;
+
+        const rowDate = String(row[0] || '').trim();
+        const rowType = String(row[1] || '').trim();
+        const rowDescription = String(row[2] || '').trim();
+        const rowIncome = toNumber(row[3]);
+        const rowExpense = toNumber(row[4]);
+        const rowComment = String(row[8] || '').trim();
+        const rowPaidBy = String(row[9] || '').trim();
+
+        return (
+          rowDate === String(deleted.date || '').trim() &&
+          rowType === String(deleted.type || '').trim() &&
+          rowDescription === String(deleted.description || '').trim() &&
+          rowIncome === toNumber(deleted.income) &&
+          rowExpense === toNumber(deleted.expense) &&
+          rowComment === String(deleted.comment || '').trim() &&
+          rowPaidBy === String(deleted.paid_by || '').trim()
+        );
+      });
+
+      if (targetIndex > 0) {
+        const spreadsheet = await sheets.spreadsheets.get({
+          spreadsheetId: MODEL_SPREADSHEET_ID,
+        });
+
+        const sheet = spreadsheet.data.sheets.find(
+          (s) => s.properties.title === 'ДопДоходы'
+        );
+
+        if (sheet) {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: MODEL_SPREADSHEET_ID,
+            requestBody: {
+              requests: [
+                {
+                  deleteDimension: {
+                    range: {
+                      sheetId: sheet.properties.sheetId,
+                      dimension: 'ROWS',
+                      startIndex: targetIndex,
+                      endIndex: targetIndex + 1,
+                    },
+                  },
+                },
+              ],
+            },
+          });
+        }
+      }
+    }
 
     res.json({ success: true, ok: true });
   } catch (error) {
