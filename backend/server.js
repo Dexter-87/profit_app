@@ -1947,7 +1947,7 @@ async function calculateAnalytics(req, topLimit = 5) {
     });
   }
 
-  const netProfit = totalProfit - expenses;
+  const netProfit = totalProfit;
 
   let myNet = 0;
   let alexNet = 0;
