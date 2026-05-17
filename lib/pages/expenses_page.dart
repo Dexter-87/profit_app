@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:my_app/services/api_service.dart';
@@ -16,7 +16,9 @@ class ExpensesPage extends StatefulWidget {
 }
 
 class _ExpensesPageState extends State<ExpensesPage> {
-  static const String baseUrl = 'https://profit-app-7u44.onrender.com';
+  static const String baseUrl = kIsWeb
+      ? 'http://localhost:8080'
+      : 'https://profit-app-7u44.onrender.com';
 
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();

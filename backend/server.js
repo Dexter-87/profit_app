@@ -79,6 +79,24 @@ function toNumber(value) {
   );
 }
 
+function parseDateForSupabase(value) {
+  if (!value) return '';
+
+  const s = String(value).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
+  }
+
+  const match = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+
+  if (match) {
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  return s;
+}
+
 function money(value) {
   return `${Math.round(toNumber(value)).toLocaleString('ru-RU')} ₸`;
 }
@@ -605,7 +623,53 @@ app.delete('/expenses/:rowIndex', async (req, res) => {
       return res.status(400).json({ error: 'Неверный номер строки' });
     }
 
-    const spreadsheet = await sheets.spreadsheets.get({
+    const sheetsApi = await getSheetsApi();
+
+    const valuesResponse = await sheetsApi.spreadsheets.values.get({
+      spreadsheetId: MODEL_SPREADSHEET_ID,
+      range: 'Expenses!A:J',
+    });
+
+    const values = valuesResponse.data.values || [];
+    const expenseRow = values[rowIndex - 1];
+
+    if (!expenseRow) {
+      return res.status(404).json({ error: 'Расход не найден' });
+    }
+
+    const expenseDate = parseDateForSupabase(expenseRow[0] || '');
+    const expenseType = expenseRow[1] || '';
+    const expenseAmount = toNumber(expenseRow[2]);
+    const expenseOwner = expenseRow[7] || '';
+    const expenseComment = expenseRow[9] || '';
+
+    console.log('DELETE EXPENSE ROW:', expenseRow);
+    console.log('DELETE EXPENSE MATCH:', {
+      expenseDate,
+      expenseType,
+      expenseAmount,
+      expenseOwner,
+      expenseComment,
+    });
+
+    const { data: supabaseDeleteData, error: supabaseDeleteError } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('date', expenseDate)
+      .eq('type', expenseType)
+      .eq('amount', expenseAmount)
+      .eq('owner', expenseOwner)
+      .eq('comment', expenseComment)
+      .select();
+
+    console.log('SUPABASE DELETE EXPENSE DATA:', supabaseDeleteData);
+    console.log('SUPABASE DELETE EXPENSE ERROR:', supabaseDeleteError);
+
+    if (supabaseDeleteError) {
+      console.error('Ошибка Supabase expenses delete:', supabaseDeleteError);
+    }
+
+    const spreadsheet = await sheetsApi.spreadsheets.get({
       spreadsheetId: MODEL_SPREADSHEET_ID,
     });
 
@@ -617,7 +681,7 @@ app.delete('/expenses/:rowIndex', async (req, res) => {
       return res.status(404).json({ error: 'Лист Expenses не найден' });
     }
 
-    await sheets.spreadsheets.batchUpdate({
+    await sheetsApi.spreadsheets.batchUpdate({
       spreadsheetId: MODEL_SPREADSHEET_ID,
       requestBody: {
         requests: [
@@ -1228,6 +1292,32 @@ app.post('/expenses', async (req, res) => {
       },
     });
 
+    try {
+      const { data, error: supabaseError } = await supabase
+        .from('expenses')
+        .insert([{
+          date: new Date().toISOString().slice(0, 10),
+          title: type || '',
+          amount: toNumber(amount),
+          type: type || '',
+          owner: owner || '',
+          comment: comment || '',
+        }])
+        .select();
+
+      console.log('SUPABASE EXPENSES DATA:', data);
+      console.log('SUPABASE EXPENSES ERROR:', supabaseError);
+
+      if (supabaseError) {
+        console.error('Ошибка Supabase expenses insert:', supabaseError);
+      }
+    } catch (supabaseCatchError) {
+      console.error(
+        'Supabase expenses duplicate error:',
+        supabaseCatchError.message
+      );
+    }
+
     res.json({ ok: true });
   } catch (error) {
     console.error('Ошибка /expenses POST:', error);
@@ -1237,7 +1327,6 @@ app.post('/expenses', async (req, res) => {
     });
   }
 });
-
 // ================= ОСТАТКИ =================
 
 app.get('/stock', async (req, res) => {

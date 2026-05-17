@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-
+import 'package:flutter/foundation.dart';
 class ApiService {
-  static const String baseUrl = 'https://profit-app-7u44.onrender.com';
+  static const String baseUrl = kIsWeb
+      ? 'http://localhost:8080'
+      : 'https://profit-app-7u44.onrender.com';
 
   static Future<List<Map<String, dynamic>>> fetchSales() async {
     final response = await http.get(Uri.parse('$baseUrl/sales'));
