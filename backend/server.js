@@ -472,6 +472,8 @@ app.get('/import-prices-to-supabase', async (req, res) => {
 });
 // ================= ДОП ДОХОДЫ =================
 
+// ================= ДОП ДОХОДЫ =================
+
 app.get('/import-side-income-to-supabase', async (req, res) => {
   try {
     const rows = await getRows(SIDE_INCOME_RANGE);
@@ -480,110 +482,73 @@ app.get('/import-side-income-to-supabase', async (req, res) => {
       date: getCell(row, ['Дата', 'date'], 0),
       type: getCell(row, ['Тип', 'type'], 1),
       description: getCell(row, ['Описание', 'description'], 2),
-
       income: toNumber(getCell(row, ['Доход', 'income'], 3)),
       expense: toNumber(getCell(row, ['Расход', 'expense'], 4)),
       profit: toNumber(getCell(row, ['Чистая прибыль', 'profit'], 5)),
-
       half_profit: toNumber(getCell(row, ['50/50', 'halfProfit'], 6)),
-
       comment: getCell(row, ['Комментарий', 'comment'], 8),
-
-      paid_by: getCell(
-        row,
-        ['Оплатил расход', 'paidBy'],
-        9
-      ),
-
-      refund_stas: toNumber(
-        getCell(row, ['Возврат Стас', 'refundStas'], 10)
-      ),
-
-      refund_alexey: toNumber(
-        getCell(row, ['Возврат Алексей', 'refundAlexey'], 11)
-      ),
-
-      total_stas: toNumber(
-        getCell(row, ['Итого Стас', 'totalStas'], 12)
-      ),
-
-      total_alexey: toNumber(
-        getCell(row, ['Итого Алексей', 'totalAlexey'], 13)
-      ),
+      paid_by: getCell(row, ['Оплатил расход', 'paidBy'], 9),
+      refund_stas: toNumber(getCell(row, ['Возврат Стас', 'refundStas'], 10)),
+      refund_alexey: toNumber(getCell(row, ['Возврат Алексей', 'refundAlexey'], 11)),
+      total_stas: toNumber(getCell(row, ['Итого Стас', 'totalStas'], 12)),
+      total_alexey: toNumber(getCell(row, ['Итого Алексей', 'totalAlexey'], 13)),
     }));
 
-    await supabase
-      .from('side_income')
-      .delete()
-      .neq('id', 0);
+    await supabase.from('side_income').delete().neq('id', 0);
 
-    const { error } = await supabase
-      .from('side_income')
-      .insert(payload);
-
+    const { error } = await supabase.from('side_income').insert(payload);
     if (error) throw error;
 
-    res.json({
-      ok: true,
-      imported: payload.length,
-    });
+    res.json({ ok: true, imported: payload.length });
   } catch (e) {
     console.error(e);
-
-    res.status(500).json({
-      error: e.message,
-    });
+    res.status(500).json({ error: e.message });
   }
 });
 
 app.get('/side-income', async (req, res) => {
   try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: MODEL_SPREADSHEET_ID,
-      range: SIDE_INCOME_RANGE,
-    });
+    const { data, error } = await supabase
+      .from('side_income')
+      .select('*')
+      .order('id', { ascending: false });
 
-    const rows = response.data.values || [];
-    if (rows.length <= 1) {
-      return res.json([]);
-    }
+    if (error) throw error;
 
-    const headers = rows[0];
+    const rows = (data || []).map((row) => ({
+      rowIndex: row.id,
+      Дата: row.date || '',
+      Тип: row.type || '',
+      Описание: row.description || '',
+      Доход: row.income || 0,
+      Расход: row.expense || 0,
+      'Чистая прибыль': row.profit || 0,
+      '50/50': row.half_profit || 0,
+      Комментарий: row.comment || '',
+      'Оплатил расход': row.paid_by || '',
+      'Возврат Стас': row.refund_stas || 0,
+      'Возврат Алексей': row.refund_alexey || 0,
+      'Итого Стас': row.total_stas || 0,
+      'Итого Алексей': row.total_alexey || 0,
+    }));
 
-    const data = rows.slice(1).map((row, index) => {
-      const obj = {};
-      headers.forEach((header, i) => {
-        obj[header] = row[i] || '';
-      });
-
-      obj.rowIndex = index + 2;
-      return obj;
-    });
-
-    res.json(data);
+    res.json(rows);
   } catch (error) {
     console.error('Ошибка /side-income:', error);
-    res.status(500).json({ error: 'Ошибка загрузки доп. доходов' });
+    res.status(500).json({
+      error: 'Ошибка загрузки доп. доходов',
+      details: error.message,
+    });
   }
 });
 
 app.post('/add-side-income', async (req, res) => {
   try {
-    const {
-      date,
-      type,
-      description,
-      income,
-      expense,
-      comment,
-      paidBy,
-    } = req.body;
+    const { date, type, description, income, expense, comment, paidBy } = req.body;
 
     const incomeNum = Number(income) || 0;
     const expenseNum = Number(expense) || 0;
-
     const cleanProfit = incomeNum - expenseNum;
-
     const halfProfit = cleanProfit / 2;
 
     let refundStas = 0;
@@ -600,9 +565,10 @@ app.post('/add-side-income', async (req, res) => {
 
     const totalStas = halfProfit + refundStas;
     const totalAlexey = halfProfit + refundAlexey;
+    const finalDate = date || todayRu();
 
     const values = [[
-      date || todayRu(),
+      finalDate,
       type || '',
       description || '',
       incomeNum,
@@ -622,19 +588,37 @@ app.post('/add-side-income', async (req, res) => {
       spreadsheetId: MODEL_SPREADSHEET_ID,
       range: 'ДопДоходы!A:N',
       valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values,
-      },
+      requestBody: { values },
     });
 
-    res.json({
-      success: true,
-      message: 'Доп. доход добавлен',
-    });
+    const { data, error } = await supabase
+      .from('side_income')
+      .insert([{
+        date: finalDate,
+        type: type || '',
+        description: description || '',
+        income: incomeNum,
+        expense: expenseNum,
+        profit: cleanProfit,
+        half_profit: halfProfit,
+        comment: comment || '',
+        paid_by: paidBy || '',
+        refund_stas: refundStas,
+        refund_alexey: refundAlexey,
+        total_stas: totalStas,
+        total_alexey: totalAlexey,
+      }])
+      .select();
+
+    if (error) throw error;
+
+    res.json({ success: true, ok: true, data });
   } catch (error) {
-
     console.error('Ошибка /add-side-income:', error);
-    res.status(500).json({ error: 'Ошибка добавления доп. дохода' });
+    res.status(500).json({
+      error: 'Ошибка добавления доп. дохода',
+      details: error.message,
+    });
   }
 });
 
@@ -707,27 +691,14 @@ app.delete('/expenses/:rowIndex', async (req, res) => {
     const expenseOwner = expenseRow[7] || '';
     const expenseComment = expenseRow[9] || '';
 
-    console.log('DELETE EXPENSE ROW:', expenseRow);
-    console.log('DELETE EXPENSE MATCH:', {
-      expenseDate,
-      expenseType,
-      expenseAmount,
-      expenseOwner,
-      expenseComment,
-    });
-
-    const { data: supabaseDeleteData, error: supabaseDeleteError } = await supabase
+    const { error: supabaseDeleteError } = await supabase
       .from('expenses')
       .delete()
       .eq('date', expenseDate)
       .eq('type', expenseType)
       .eq('amount', expenseAmount)
       .eq('owner', expenseOwner)
-      .eq('comment', expenseComment)
-      .select();
-
-    console.log('SUPABASE DELETE EXPENSE DATA:', supabaseDeleteData);
-    console.log('SUPABASE DELETE EXPENSE ERROR:', supabaseDeleteError);
+      .eq('comment', expenseComment);
 
     if (supabaseDeleteError) {
       console.error('Ошибка Supabase expenses delete:', supabaseDeleteError);
@@ -773,30 +744,19 @@ app.delete('/expenses/:rowIndex', async (req, res) => {
   }
 });
 
-
 app.put('/side-income/:rowIndex', async (req, res) => {
   try {
-    const rowIndex = Number(req.params.rowIndex);
+    const id = Number(req.params.rowIndex);
 
-    if (!rowIndex || rowIndex < 2) {
-      return res.status(400).json({ error: 'Неверный номер строки' });
+    if (!id) {
+      return res.status(400).json({ error: 'Неверный id' });
     }
 
-    const {
-      date,
-      type,
-      description,
-      income,
-      expense,
-      comment,
-      paidBy,
-    } = req.body;
+    const { date, type, description, income, expense, comment, paidBy } = req.body;
 
     const incomeNum = Number(income) || 0;
     const expenseNum = Number(expense) || 0;
-
     const cleanProfit = incomeNum - expenseNum;
-
     const halfProfit = cleanProfit / 2;
 
     let refundStas = 0;
@@ -813,91 +773,62 @@ app.put('/side-income/:rowIndex', async (req, res) => {
 
     const totalStas = halfProfit + refundStas;
     const totalAlexey = halfProfit + refundAlexey;
+    const finalDate = date || todayRu();
 
-    const values = [[
-      date || todayRu(),
-      type || '',
-      description || '',
-      incomeNum,
-      expenseNum,
-      cleanProfit,
-      halfProfit,
-      halfProfit,
-      comment || '',
-      paidBy || '',
-      refundStas,
-      refundAlexey,
-      totalStas,
-      totalAlexey,
-    ]];
+    const { data, error } = await supabase
+      .from('side_income')
+      .update({
+        date: finalDate,
+        type: type || '',
+        description: description || '',
+        income: incomeNum,
+        expense: expenseNum,
+        profit: cleanProfit,
+        half_profit: halfProfit,
+        comment: comment || '',
+        paid_by: paidBy || '',
+        refund_stas: refundStas,
+        refund_alexey: refundAlexey,
+        total_stas: totalStas,
+        total_alexey: totalAlexey,
+      })
+      .eq('id', id)
+      .select();
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: MODEL_SPREADSHEET_ID,
-      range: `ДопДоходы!A${rowIndex}:N${rowIndex}`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values,
-      },
-    });
+    if (error) throw error;
 
-    res.json({
-      success: true,
-      message: 'Доп. доход обновлен',
-    });
+    res.json({ success: true, ok: true, data });
   } catch (error) {
-
     console.error('Ошибка PUT /side-income:', error);
-    res.status(500).json({ error: 'Ошибка обновления доп. дохода' });
+    res.status(500).json({
+      error: 'Ошибка обновления доп. дохода',
+      details: error.message,
+    });
   }
 });
 
 app.delete('/side-income/:rowIndex', async (req, res) => {
   try {
-    const rowIndex = Number(req.params.rowIndex);
+    const id = Number(req.params.rowIndex);
 
-    if (!rowIndex || rowIndex < 2) {
-      return res.status(400).json({ error: 'Неверный номер строки' });
+    if (!id) {
+      return res.status(400).json({ error: 'Неверный id' });
     }
 
-    const spreadsheet = await sheets.spreadsheets.get({
-      spreadsheetId: MODEL_SPREADSHEET_ID,
-    });
+    const { error } = await supabase
+      .from('side_income')
+      .delete()
+      .eq('id', id);
 
-    const sheet = spreadsheet.data.sheets.find(
-      (s) => s.properties.title === 'ДопДоходы'
-    );
+    if (error) throw error;
 
-    if (!sheet) {
-      return res.status(404).json({ error: 'Лист ДопДоходы не найден' });
-    }
-
-    const sheetId = sheet.properties.sheetId;
-
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: MODEL_SPREADSHEET_ID,
-      requestBody: {
-        requests: [
-          {
-            deleteDimension: {
-              range: {
-                sheetId,
-                dimension: 'ROWS',
-                startIndex: rowIndex - 1,
-                endIndex: rowIndex,
-              },
-            },
-          },
-        ],
-      },
-    });
-
-    res.json({
-      success: true,
-      message: 'Доп. доход удален',
-    });
+    res.json({ success: true, ok: true });
   } catch (error) {
     console.error('Ошибка DELETE /side-income:', error);
-    res.status(500).json({ error: 'Ошибка удаления доп. дохода' });
+    res.status(500).json({
+      error: 'Ошибка удаления доп. дохода',
+      details: error.message,
+    });
   }
 });
 
