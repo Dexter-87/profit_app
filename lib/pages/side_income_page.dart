@@ -573,129 +573,182 @@ class _SideIncomePageState extends State<SideIncomePage> {
     }
 
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
       onTap: () {
         FocusScope.of(context).unfocus();
       },
       child: Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
         backgroundColor: AppColors.bg,
-        elevation: 0,
-        title: const Text(
-          'Доп. доходы',
-          style: TextStyle(
-            color: AppColors.textMain,
-            fontWeight: FontWeight.w900,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          elevation: 0,
+          title: const Text(
+            'Доп. доходы',
+            style: TextStyle(
+              color: AppColors.textMain,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-              children: [
-                AppUi.sectionCard(
-                  title: 'Итоги 50/50',
-                  icon: Icons.handshake_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: Column(
-                    children: [
-                      _summaryRow('Доход', _money(totalIncome)),
-                      _summaryRow('Расход', _money(totalExpense)),
-                      _summaryRow('Чистая прибыль', _money(totalProfit)),
-                      _summaryRow('Возврат Стасу', _money(totalRefundStas)),
-                      _summaryRow('Возврат Алексею', _money(totalRefundAlexey)),
-                      _summaryRow('Итого Стас', _money(totalStas)),
-                      _summaryRow('Итого Алексей', _money(totalAlexey)),
-                    ],
+        body: RefreshIndicator(
+          onRefresh: _load,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                children: [
+                  AppUi.sectionCard(
+                    title: 'Итоги 50/50',
+                    icon: Icons.handshake_outlined,
+                    accent: const Color(0xFF06B6D4),
+                    child: Column(
+                      children: [
+                        _summaryRow('Доход', _money(totalIncome)),
+                        _summaryRow('Расход', _money(totalExpense)),
+                        _summaryRow('Чистая прибыль', _money(totalProfit)),
+                        _summaryRow('Возврат Стасу', _money(totalRefundStas)),
+                        _summaryRow(
+                          'Возврат Алексею',
+                          _money(totalRefundAlexey),
+                        ),
+                        _summaryRow('Итого Стас', _money(totalStas)),
+                        _summaryRow('Итого Алексей', _money(totalAlexey)),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                AppUi.sectionCard(
-                  title: _editingRowIndex == null
-                      ? 'Добавить доп. доход'
-                      : 'Редактировать доп. доход',
-                  icon: _editingRowIndex == null
-                      ? Icons.add_circle_outline
-                      : Icons.edit_outlined,
-                  accent: _editingRowIndex == null
-                      ? const Color(0xFF22C55E)
-                      : const Color(0xFF4DA3FF),
-                  child: Column(
-                    children: [
-                      _field(controller: _typeCtrl, label: 'Тип'),
-                      const SizedBox(height: 10),
-                      _field(controller: _descriptionCtrl, label: 'Описание'),
-                      const SizedBox(height: 10),
-                      _field(
-                        controller: _incomeCtrl,
-                        label: 'Доход',
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 10),
-                      _field(
-                        controller: _expenseCtrl,
-                        label: 'Расход',
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 10),
-                      _paidBySelector(),
-                      const SizedBox(height: 10),
-                      _summaryRow('Чистая прибыль', _money(_cleanProfit())),
-                      _summaryRow('Возврат Стасу', _money(_refundStas())),
-                      _summaryRow('Возврат Алексею', _money(_refundAlexey())),
-                      _summaryRow('Итого Стас', _money(_totalStas())),
-                      _summaryRow('Итого Алексей', _money(_totalAlexey())),
-                      const SizedBox(height: 10),
-                      _field(controller: _commentCtrl, label: 'Комментарий'),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          _actionButton(
-                            title: _editingRowIndex == null
-                                ? 'Добавить'
-                                : 'Сохранить',
-                            icon: _editingRowIndex == null
-                                ? Icons.add_rounded
-                                : Icons.save_outlined,
-                            onTap: _save,
-                            colors: const [
-                              Color(0xFF06B6D4),
-                              Color(0xFF0891B2),
-                            ],
-                          ),
-                          if (_editingRowIndex != null) ...[
-                            const SizedBox(width: 10),
+
+                  const SizedBox(height: 16),
+
+                  AppUi.sectionCard(
+                    title: _editingRowIndex == null
+                        ? 'Добавить доп. доход'
+                        : 'Редактировать доп. доход',
+                    icon: _editingRowIndex == null
+                        ? Icons.add_circle_outline
+                        : Icons.edit_outlined,
+                    accent: _editingRowIndex == null
+                        ? const Color(0xFF22C55E)
+                        : const Color(0xFF4DA3FF),
+                    child: Column(
+                      children: [
+                        _field(controller: _typeCtrl, label: 'Тип'),
+
+                        const SizedBox(height: 10),
+
+                        _field(
+                          controller: _descriptionCtrl,
+                          label: 'Описание',
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        _field(
+                          controller: _incomeCtrl,
+                          label: 'Доход',
+                          keyboardType: TextInputType.number,
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        _field(
+                          controller: _expenseCtrl,
+                          label: 'Расход',
+                          keyboardType: TextInputType.number,
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        _paidBySelector(),
+
+                        const SizedBox(height: 10),
+
+                        _summaryRow(
+                          'Чистая прибыль',
+                          _money(_cleanProfit()),
+                        ),
+
+                        _summaryRow(
+                          'Возврат Стасу',
+                          _money(_refundStas()),
+                        ),
+
+                        _summaryRow(
+                          'Возврат Алексею',
+                          _money(_refundAlexey()),
+                        ),
+
+                        _summaryRow(
+                          'Итого Стас',
+                          _money(_totalStas()),
+                        ),
+
+                        _summaryRow(
+                          'Итого Алексей',
+                          _money(_totalAlexey()),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        _field(
+                          controller: _commentCtrl,
+                          label: 'Комментарий',
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        Row(
+                          children: [
                             _actionButton(
-                              title: 'Отмена',
-                              icon: Icons.close_rounded,
-                              onTap: _clearForm,
+                              title: _editingRowIndex == null
+                                  ? 'Добавить'
+                                  : 'Сохранить',
+                              icon: _editingRowIndex == null
+                                  ? Icons.add_rounded
+                                  : Icons.save_outlined,
+                              onTap: _save,
                               colors: const [
-                                Color(0xFF64748B),
-                                Color(0xFF475569),
+                                Color(0xFF06B6D4),
+                                Color(0xFF0891B2),
                               ],
                             ),
+
+                            if (_editingRowIndex != null) ...[
+                              const SizedBox(width: 10),
+
+                              _actionButton(
+                                title: 'Отмена',
+                                icon: Icons.close_rounded,
+                                onTap: _clearForm,
+                                colors: const [
+                                  Color(0xFF64748B),
+                                  Color(0xFF475569),
+                                ],
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (_loading)
-                  const Center(child: CircularProgressIndicator())
-                else if (_error.isNotEmpty)
-                  Text(
-                    _error,
-                    style: const TextStyle(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w700,
+                        ),
+                      ],
                     ),
-                  )
-                else if (_items.isEmpty)
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  if (_loading)
+                    const Center(
+                      child: CircularProgressIndicator(),
+                    )
+                  else if (_error.isNotEmpty)
+                    Text(
+                      _error,
+                      style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  else if (_items.isEmpty)
                     const Text(
                       'Пока нет доп. доходов',
                       style: TextStyle(
@@ -705,39 +758,39 @@ class _SideIncomePageState extends State<SideIncomePage> {
                     )
                   else
                     ..._items.map(_itemCard),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
-  }
+    }
 
-  Widget _summaryRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
+    Widget _summaryRow(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
               ),
             ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textMain,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+            Text(
+              value,
+              style: const TextStyle(
+                color: AppColors.textMain,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-        ],
-      ),
-     ),
-    );
-  }
-}
+          ],
+        ),
+      );
+    }
+    }
