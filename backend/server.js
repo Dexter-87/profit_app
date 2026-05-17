@@ -472,6 +472,70 @@ app.get('/import-prices-to-supabase', async (req, res) => {
 });
 // ================= ДОП ДОХОДЫ =================
 
+app.get('/import-side-income-to-supabase', async (req, res) => {
+  try {
+    const rows = await getRows(SIDE_INCOME_RANGE);
+
+    const payload = rows.map((row) => ({
+      date: getCell(row, ['Дата', 'date'], 0),
+      type: getCell(row, ['Тип', 'type'], 1),
+      description: getCell(row, ['Описание', 'description'], 2),
+
+      income: toNumber(getCell(row, ['Доход', 'income'], 3)),
+      expense: toNumber(getCell(row, ['Расход', 'expense'], 4)),
+      profit: toNumber(getCell(row, ['Чистая прибыль', 'profit'], 5)),
+
+      half_profit: toNumber(getCell(row, ['50/50', 'halfProfit'], 6)),
+
+      comment: getCell(row, ['Комментарий', 'comment'], 8),
+
+      paid_by: getCell(
+        row,
+        ['Оплатил расход', 'paidBy'],
+        9
+      ),
+
+      refund_stas: toNumber(
+        getCell(row, ['Возврат Стас', 'refundStas'], 10)
+      ),
+
+      refund_alexey: toNumber(
+        getCell(row, ['Возврат Алексей', 'refundAlexey'], 11)
+      ),
+
+      total_stas: toNumber(
+        getCell(row, ['Итого Стас', 'totalStas'], 12)
+      ),
+
+      total_alexey: toNumber(
+        getCell(row, ['Итого Алексей', 'totalAlexey'], 13)
+      ),
+    }));
+
+    await supabase
+      .from('side_income')
+      .delete()
+      .neq('id', 0);
+
+    const { error } = await supabase
+      .from('side_income')
+      .insert(payload);
+
+    if (error) throw error;
+
+    res.json({
+      ok: true,
+      imported: payload.length,
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      error: e.message,
+    });
+  }
+});
+
 app.get('/side-income', async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
