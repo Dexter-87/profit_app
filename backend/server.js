@@ -1582,6 +1582,25 @@ app.post('/distribution', async (req, res) => {
       requestBody: { values },
     });
 
+    const payload = rows.map((r) => ({
+      metric: r.metric ?? '',
+      stas: toNumber(r.stas),
+      alexey: toNumber(r.alexey),
+      total: toNumber(r.total),
+      model: r.model ?? '',
+    }));
+
+    await supabase
+      .from('distribution')
+      .delete()
+      .neq('id', 0);
+
+    const { error: supabaseError } = await supabase
+      .from('distribution')
+      .insert(payload);
+
+    if (supabaseError) throw supabaseError;
+
     res.json({ ok: true });
   } catch (error) {
     console.error('Ошибка /distribution POST:', error);
