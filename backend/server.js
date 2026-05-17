@@ -559,8 +559,8 @@ app.post('/add-side-income', async (req, res) => {
     } else if (paidBy === 'Алексей') {
       refundAlexey = expenseNum;
     } else if (paidBy === 'Общий') {
-      refundStas = expenseNum / 2;
-      refundAlexey = expenseNum / 2;
+      refundStas = 0;
+      refundAlexey = 0;
     }
 
     const totalStas = halfProfit + refundStas;
