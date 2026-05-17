@@ -1500,6 +1500,42 @@ app.post('/plan', async (req, res) => {
 });
 // ================= МОДЕЛЬ =================
 
+app.get('/import-distribution-to-supabase', async (req, res) => {
+  try {
+    const rows = await getRows(DISTRIBUTION_RANGE);
+
+    const payload = rows.map((row) => ({
+      metric: row.metric || '',
+      stas: toNumber(row.stas),
+      alexey: toNumber(row.alexey),
+      total: toNumber(row.total),
+      model: row.model || '',
+    }));
+
+    await supabase
+      .from('distribution')
+      .delete()
+      .neq('id', 0);
+
+    const { error } = await supabase
+      .from('distribution')
+      .insert(payload);
+
+    if (error) throw error;
+
+    res.json({
+      ok: true,
+      imported: payload.length,
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      error: e.message,
+    });
+  }
+});
+
 app.get('/distribution', async (req, res) => {
   try {
     const rows = await getRows(DISTRIBUTION_RANGE);
