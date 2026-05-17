@@ -40,6 +40,17 @@ class _HomePageState extends State<HomePage> {
 
   String get _baseUrl => 'https://profit-app-7u44.onrender.com';
 
+  String get _periodText {
+    final now = DateTime.now();
+    final lastDay = DateTime(now.year, now.month + 1, 0).day;
+
+    final start = '01.${now.month.toString().padLeft(2, '0')}.${now.year}';
+    final end =
+        '${lastDay.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}.${now.year}';
+
+    return 'Период: $start — $end';
+  }
+
   Future<void> _loadAnalytics() async {
     setState(() {
       _loading = true;
@@ -47,8 +58,19 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final response =
-          await http.get(Uri.parse('$_baseUrl/analytics'));
+      final now = DateTime.now();
+
+      final from =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
+
+      final lastDay = DateTime(now.year, now.month + 1, 0).day;
+
+      final to =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')}';
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/analytics?date_from=$from&date_to=$to'),
+      );
 
       if (response.statusCode != 200) {
         throw Exception();
@@ -70,7 +92,6 @@ class _HomePageState extends State<HomePage> {
 
   double _toDouble(dynamic value) {
     if (value == null) return 0;
-
     if (value is num) return value.toDouble();
 
     return double.tryParse(
@@ -86,7 +107,6 @@ class _HomePageState extends State<HomePage> {
 
   String _money(dynamic value) {
     final number = _toDouble(value).round();
-
     final raw = number.toString();
     final buffer = StringBuffer();
 
@@ -369,8 +389,7 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'TechnoOpt',
@@ -380,41 +399,49 @@ class _HomePageState extends State<HomePage> {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'главная панель бизнеса',
-                            style: TextStyle(
-                              color: _muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Text(
-                            'Период: текущий месяц',
-                            style: TextStyle(
-                              color: _blue.withOpacity(0.9),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'главная панель бизнеса',
+                        style: TextStyle(
+                          color: _muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _periodText,
+                        style: TextStyle(
+                          color: _blue.withOpacity(0.9),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ],
                   ),
                 ),
+                GestureDetector(
+                  onTap: _loadAnalytics,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(
+                      Icons.refresh_rounded,
+                      color: _text,
+                    ),
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 18),
 
             _glass(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Чистая прибыль',
@@ -443,23 +470,18 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 22),
-
                   _statRow(
                     'Валовая прибыль',
                     _short(totalProfit),
                     _blue,
                   ),
-
                   const SizedBox(height: 14),
-
                   _statRow(
                     'Расходы',
                     _short(expenses),
                     _orange,
                   ),
-
                   const SizedBox(height: 14),
-
                   _statRow(
                     'Маржа',
                     '${_toDouble(_analytics?['margin']).toStringAsFixed(1)}%',
@@ -562,6 +584,8 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+
+            const SizedBox(height: 24),
           ],
         ),
       ),

@@ -1696,9 +1696,24 @@ async function calculateAnalytics(req, topLimit = 5) {
   const from = dateFrom ? parseDate(dateFrom) : null;
   const to = dateTo ? parseDate(dateTo) : null;
 
-  const { data: salesRowsRaw } = await supabase
-    .from('sales')
-    .select('*');
+  let salesRowsRaw = [];
+  let fromSales = 0;
+  const pageSize = 1000;
+
+  while (true) {
+    const { data: chunk, error } = await supabase
+      .from('sales')
+      .select('*')
+      .range(fromSales, fromSales + pageSize - 1);
+
+    if (error) throw error;
+    if (!chunk || chunk.length === 0) break;
+
+    salesRowsRaw = salesRowsRaw.concat(chunk);
+
+    if (chunk.length < pageSize) break;
+    fromSales += pageSize;
+  }
 
   const { data: expenseRowsRaw } = await supabase
     .from('expenses')
