@@ -63,6 +63,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     super.dispose();
   }
 
+  String _field(dynamic item, String snake, String camel) {
+    return (item[snake] ?? item[camel] ?? '').toString().trim();
+  }
+
   Future<void> _loadPrices() async {
     setState(() => _loadingPrices = true);
 
@@ -89,21 +93,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   Future<void> _loadClients() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/sales'),
-      );
-
+      final response = await http.get(Uri.parse('$baseUrl/sales'));
       final data = jsonDecode(response.body);
 
       final Set<String> clients = {};
 
       for (final row in data) {
-        final client =
-            (row['Клиент'] ?? '').toString().trim();
+        final client = (row['Клиент'] ?? row['client'] ?? '').toString().trim();
 
-        if (client.isNotEmpty &&
-            client != '-' &&
-            client.length > 2) {
+        if (client.isNotEmpty && client != '-' && client.length > 2) {
           clients.add(client);
         }
       }
@@ -120,7 +118,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     final set = <String>{};
 
     for (final item in _prices) {
-      final type = (item['price_Type'] ?? '').toString().trim();
+      final type = _field(item, 'price_type', 'priceType');
       if (type.isNotEmpty) set.add(type);
     }
 
@@ -141,12 +139,12 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
     setState(() {
       _filteredPrices = _prices.where((item) {
-        final brand = (item['brand'] ?? '').toString().toLowerCase();
-        final model = (item['model'] ?? '').toString().toLowerCase();
-        final fullName = (item['fullName'] ?? '').toString().toLowerCase();
-        final source = (item['source'] ?? '').toString().toLowerCase();
+        final brand = _field(item, 'brand', 'brand').toLowerCase();
+        final model = _field(item, 'model', 'model').toLowerCase();
+        final fullName = _field(item, 'full_name', 'fullName').toLowerCase();
+        final source = _field(item, 'source', 'source').toLowerCase();
         final priceType =
-            (item['price_Type'] ?? '').toString().toLowerCase().trim();
+            _field(item, 'price_type', 'priceType').toLowerCase();
 
         final matchesProduct = brand.contains(query) ||
             model.contains(query) ||
@@ -178,8 +176,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   void _selectProduct(dynamic item) {
     setState(() {
-      final brand = (item['brand'] ?? '').toString().trim();
-      final model = (item['model'] ?? '').toString().trim();
+      final brand = _field(item, 'brand', 'brand');
+      final model = _field(item, 'model', 'model');
 
       final modelLower = model.toLowerCase();
       final brandLower = brand.toLowerCase();
@@ -626,10 +624,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               itemBuilder: (context, index) {
                 final item = _filteredPrices[index];
 
-                final brand = (item['brand'] ?? '').toString();
-                final model = (item['model'] ?? '').toString();
-                final source = (item['source'] ?? '').toString();
-                final priceType = (item['price_Type'] ?? '').toString();
+                final brand = _field(item, 'brand', 'brand');
+                final model = _field(item, 'model', 'model');
+                final source = _field(item, 'source', 'source');
+                final priceType = _field(item, 'price_type', 'priceType');
                 final price = _toDouble((item['price'] ?? 0).toString());
                 final cost = _toDouble((item['cost'] ?? 0).toString());
 
