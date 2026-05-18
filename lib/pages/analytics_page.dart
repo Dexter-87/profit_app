@@ -169,12 +169,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   void _openPdfReport(String endpoint) {
     final from = _formatApiDate(_dateFrom);
     final to = _formatApiDate(_dateTo);
+    final cache = DateTime.now().millisecondsSinceEpoch;
 
-    final url = 'https://profit-app-7u44.onrender.com/$endpoint/pdf?dateFrom=$from&dateTo=$to';
+    final url =
+        '${ApiService.baseUrl}/$endpoint/pdf?dateFrom=$from&dateTo=$to&v=$cache';
+
+    debugPrint('PDF URL: $url');
 
     launchUrl(
       Uri.parse(url),
-      mode: LaunchMode.inAppBrowserView,
+      mode: LaunchMode.externalApplication,
     );
   }
 

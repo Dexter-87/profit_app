@@ -182,6 +182,7 @@ static Future<void> deleteSaleByBatch(String batchId) async {
     required String owner,
     required String type,
     required String comment,
+    required String channel,
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/expenses'),
@@ -191,6 +192,7 @@ static Future<void> deleteSaleByBatch(String batchId) async {
         'owner': owner,
         'type': type,
         'comment': comment,
+        'channel': channel,
       }),
     );
 
@@ -199,9 +201,9 @@ static Future<void> deleteSaleByBatch(String batchId) async {
         'Ошибка добавления расхода: ${response.body}',
       );
     }
-  }
+    }
 
-  static Future<List<Map<String, dynamic>>> fetchPlan() async {
+    static Future<List<Map<String, dynamic>>> fetchPlan() async {
     final response = await http.get(Uri.parse('$baseUrl/plan'));
 
     if (response.statusCode != 200) {

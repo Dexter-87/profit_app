@@ -23,6 +23,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _commentController = TextEditingController();
 
+  String _selectedChannel = 'Общие';
   String _selectedType = 'Стас';
   bool _isSaving = false;
 
@@ -182,9 +183,12 @@ class _ExpensesPageState extends State<ExpensesPage> {
   void _downloadPdfReport() async {
     final from = _formatApiDate(_dateFrom);
     final to = _formatApiDate(_dateTo);
+    final cache = DateTime.now().millisecondsSinceEpoch;
 
     final url =
-        '$baseUrl/expenses-report/pdf?dateFrom=$from&dateTo=$to';
+        '$baseUrl/expenses-report/pdf?dateFrom=$from&dateTo=$to&v=$cache';
+
+    debugPrint('PDF URL: $url');
 
     final uri = Uri.parse(url);
 
@@ -229,6 +233,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
           owner: _selectedType,
           type: _selectedType,
           comment: comment,
+          channel: _selectedChannel,
         );
       }
 
@@ -345,6 +350,42 @@ class _ExpensesPageState extends State<ExpensesPage> {
       ),
     );
   }
+
+Widget _channelChoice(String title) {
+  final selected = _selectedChannel == title;
+
+  return Expanded(
+    child: InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: () {
+        setState(() {
+          _selectedChannel = title;
+        });
+      },
+      child: Container(
+        height: 52,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: selected ? LinearGradient(colors: _accentColors) : null,
+          color: selected ? null : AppColors.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? Colors.transparent : AppColors.stroke,
+          ),
+        ),
+        child: Text(
+          title,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: selected ? Colors.white : AppColors.textMain,
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _input({
     required TextEditingController controller,
@@ -616,6 +657,23 @@ class _ExpensesPageState extends State<ExpensesPage> {
                     ],
                   ),
                 ),
+
+                AppUi.sectionCard(
+                  title: 'Канал расхода',
+                  icon: Icons.account_tree_outlined,
+                  accent: _accentColors.first,
+                  child: Row(
+                    children: [
+                      _channelChoice('Каспий'),
+                      const SizedBox(width: 8),
+                      _channelChoice('ОПТ'),
+                      const SizedBox(width: 8),
+                      _channelChoice('Общие'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 const SizedBox(height: 16),
                 AppUi.sectionCard(
                   title: 'Сумма',

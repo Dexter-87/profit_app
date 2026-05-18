@@ -1329,7 +1329,9 @@ app.get('/expenses', async (req, res) => {
 
 app.post('/expenses', async (req, res) => {
   try {
-    const { amount, owner, type, comment } = req.body;
+    const { amount, owner, type, comment, channel } = req.body;
+    const expenseChannel = channel || 'Общие';
+
     const sheetsApi = await getSheetsApi();
 
     await sheetsApi.spreadsheets.values.append({
@@ -1342,7 +1344,7 @@ app.post('/expenses', async (req, res) => {
           todayRu(),
           type || '',
           amount || '',
-          '',
+          expenseChannel,
           '',
           '',
           '',
@@ -1362,6 +1364,7 @@ app.post('/expenses', async (req, res) => {
           amount: toNumber(amount),
           type: type || '',
           owner: owner || '',
+          channel: expenseChannel,
           comment: comment || '',
         }])
         .select();
@@ -1373,10 +1376,7 @@ app.post('/expenses', async (req, res) => {
         console.error('Ошибка Supabase expenses insert:', supabaseError);
       }
     } catch (supabaseCatchError) {
-      console.error(
-        'Supabase expenses duplicate error:',
-        supabaseCatchError.message
-      );
+      console.error('Supabase expenses duplicate error:', supabaseCatchError.message);
     }
 
     res.json({ ok: true });
@@ -1744,6 +1744,7 @@ async function calculateAnalytics(req, topLimit = 5) {
     'Дата': row.date,
     'Сумма': row.amount,
     'Тип': row.type,
+    'Канал': row.channel || 'Общие',
     'Комментарий': row.comment,
     'Владелец': row.owner,
   }));
@@ -1882,12 +1883,31 @@ async function calculateAnalytics(req, topLimit = 5) {
   }
 
   let expenses = 0;
+  let kaspiExpenses = 0;
+  let optExpenses = 0;
+  let commonExpenses = 0;
 
   for (const row of expenseRows) {
     const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
     if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
 
-    expenses += toNumber(getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2));
+    const amount = toNumber(
+      getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2)
+    );
+
+    const expenseChannel = String(
+      getCell(row, ['Канал', 'channel'], 3)
+    ).trim();
+
+    expenses += amount;
+
+    if (expenseChannel === 'Каспий' || expenseChannel === 'Каспи') {
+      kaspiExpenses += amount;
+    } else if (expenseChannel === 'ОПТ') {
+      optExpenses += amount;
+    } else {
+      commonExpenses += amount;
+    }
   }
 
   for (const row of sideIncomeRows) {
@@ -2006,6 +2026,11 @@ async function calculateAnalytics(req, topLimit = 5) {
     myProfit,
     alexProfit,
     expenses,
+    kaspiExpenses,
+    optExpenses,
+    commonExpenses,
+    kaspiNetProfit: kaspiProfit - kaspiExpenses,
+    optNetProfit: optProfit - optExpenses,
     myNet,
     alexNet,
 
@@ -2285,19 +2310,17 @@ async function buildAnalyticsReportData(req) {
 }
 
 function setupPdf(res, filename) {
-  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  const doc = new PDFDocument({
+    margin: 36,
+    size: 'A4',
+  });
 
   const fontPath = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
 
-  doc.registerFont('DejaVu', fontPath);
-  doc.font('DejaVu');
-
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
-
-  doc.pipe(res);
-  return doc;
-
+  if (fs.existsSync(fontPath)) {
+    doc.registerFont('DejaVu', fontPath);
+    doc.font('DejaVu');
+  }
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
@@ -2306,24 +2329,128 @@ function setupPdf(res, filename) {
   return doc;
 }
 
- function pdfHeader(doc, title, data) {
-   doc.fontSize(22).text('TechnoOpt', { align: 'center' });
-   doc.moveDown(0.3);
-   doc.fontSize(18).text(title, { align: 'center' });
-   doc.moveDown();
+const PDF = {
+  left: 36,
+  right: 559,
+  width: 523,
+  blue: '#2563EB',
+  dark: '#111827',
+  gray: '#6B7280',
+  light: '#F3F4F6',
+  line: '#D1D5DB',
+};
 
-   doc.fontSize(11).text(`Период: ${data.dateFrom || '—'} - ${data.dateTo || '—'}`);
-   doc.text(`Модель: Капитал + работа`);
-   doc.moveDown();
- }
+function drawTop(doc, title, subtitle = '') {
+  doc.rect(0, 0, 595, 92).fill(PDF.blue);
 
- function checkPage(doc, y) {
-  if (y > 740) {
+  doc
+    .fillColor('white')
+    .fontSize(24)
+    .text('TechnoOpt', PDF.left, 24);
+
+  doc
+    .fontSize(14)
+    .text(title, PDF.left, 56);
+
+  if (subtitle) {
+    doc
+      .fillColor(PDF.gray)
+      .fontSize(9)
+      .text(subtitle, PDF.left, 108);
+    return 132;
+  }
+
+  return 118;
+}
+
+function drawCard(doc, x, y, w, title, value) {
+  doc.roundedRect(x, y, w, 56, 10).fill(PDF.light);
+
+  doc
+    .fillColor(PDF.gray)
+    .fontSize(8.5)
+    .text(title, x + 10, y + 9, { width: w - 20 });
+
+  doc
+    .fillColor(PDF.dark)
+    .fontSize(11)
+    .text(value, x + 10, y + 30, { width: w - 20 });
+}
+
+function ensurePage(doc, y, minSpace = 70) {
+  if (y + minSpace > 780) {
     doc.addPage();
     return 40;
   }
 
   return y;
+}
+
+function drawSectionTitle(doc, title, y) {
+  y = ensurePage(doc, y, 45);
+
+  doc
+    .fillColor(PDF.dark)
+    .fontSize(14)
+    .text(title, PDF.left, y);
+
+  return y + 24;
+}
+
+function drawTableHeader(doc, y, columns) {
+  y = ensurePage(doc, y, 40);
+
+  doc
+    .roundedRect(PDF.left, y, PDF.width, 24, 6)
+    .fill('#E5E7EB');
+
+  doc.fillColor(PDF.dark).fontSize(8.5);
+
+  columns.forEach((c) => {
+    doc.text(c.title, c.x, y + 7, {
+      width: c.w,
+      align: c.align || 'left',
+    });
+  });
+
+  return y + 32;
+}
+
+function drawTableRow(doc, y, columns, index) {
+  const heights = columns.map((c) =>
+    doc.heightOfString(String(c.value ?? ''), {
+      width: c.w,
+      align: c.align || 'left',
+    })
+  );
+
+  const rowHeight = Math.max(22, Math.max(...heights) + 10);
+
+  if (y + rowHeight > 770) {
+    doc.addPage();
+    y = 40;
+  }
+
+  if (index % 2 === 0) {
+    doc.rect(PDF.left, y - 5, PDF.width, rowHeight).fill('#F9FAFB');
+  }
+
+  doc.fillColor(PDF.dark).fontSize(8.5);
+
+  columns.forEach((c) => {
+    doc.text(String(c.value ?? ''), c.x, y, {
+      width: c.w,
+      align: c.align || 'left',
+    });
+  });
+
+  return y + rowHeight;
+}
+
+function periodText(dataOrReq) {
+  const dateFrom = dataOrReq.dateFrom || dataOrReq.query?.dateFrom || '—';
+  const dateTo = dataOrReq.dateTo || dataOrReq.query?.dateTo || '—';
+  return `Период: ${dateFrom} - ${dateTo}`;
 }
 
 // ================= PDF ОТЧЁТ ПО РАСХОДАМ =================
@@ -2343,42 +2470,7 @@ app.get('/expenses-report/pdf', async (req, res) => {
       return rowInPeriod(rawDate, from, to);
     });
 
-    const doc = new PDFDocument({ margin: 40, size: 'A4' });
-
-    const fontPath = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
-
-    doc.registerFont('DejaVu', fontPath);
-    doc.font('DejaVu');
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=expenses-report.pdf'
-    );
-
-    doc.pipe(res);
-
-    doc.fontSize(22).text('TechnoOpt', { align: 'center' });
-    doc.moveDown(0.3);
-    doc.fontSize(18).text('Отчёт по расходам', { align: 'center' });
-
-    doc.moveDown();
-
-    doc.fontSize(11).text(`Период: ${dateFrom || '—'} - ${dateTo || '—'}`);
-
-    doc.moveDown();
-
-    let y = doc.y;
-
-    doc.fontSize(10);
-    doc.text('Дата', 40, y);
-    doc.text('Тип', 110, y);
-    doc.text('Комментарий', 200, y);
-    doc.text('Сумма', 460, y);
-
-    y += 18;
-    doc.moveTo(40, y).lineTo(555, y).stroke();
-    y += 10;
+    const doc = setupPdf(res, 'expenses-report.pdf');
 
     let total = 0;
     let stas = 0;
@@ -2386,42 +2478,72 @@ app.get('/expenses-report/pdf', async (req, res) => {
     let common = 0;
 
     filtered.forEach((row) => {
-      const rawDate = getCell(row, ['Дата'], 0);
       const type = String(getCell(row, ['Тип', 'type'], 1)).trim();
-      const amount = toNumber(getCell(row, ['Сумма'], 2));
-      const comment = String(getCell(row, ['Комментарий'], 9)).trim();
+      const amount = toNumber(getCell(row, ['Сумма', 'amount'], 2));
 
       total += amount;
 
       if (type.includes('Стас')) stas += amount;
       else if (type.includes('Алексей')) alex += amount;
       else common += amount;
-
-      if (y > 740) {
-        doc.addPage();
-        y = 40;
-      }
-
-      doc.text(String(rawDate), 40, y);
-      doc.text(type, 110, y);
-      doc.text(comment || '-', 200, y, { width: 240 });
-      doc.text(money(amount), 460, y);
-
-      y += 25;
     });
 
-    doc.moveTo(40, y).lineTo(555, y).stroke();
-    y += 15;
+    let y = drawTop(doc, 'Отчёт по расходам', `Период: ${dateFrom || '—'} - ${dateTo || '—'}`);
 
-    doc.fontSize(14).text(`ИТОГО: ${money(total)}`, 400, y, {
-      align: 'right',
-    });
+    drawCard(doc, 36, y, 122, 'Итого', money(total));
+    drawCard(doc, 169, y, 122, 'Стас', money(stas));
+    drawCard(doc, 302, y, 122, 'Алексей', money(alex));
+    drawCard(doc, 435, y, 122, 'Общие', money(common));
 
-    doc.moveDown(2);
+    y += 82;
+    y = drawSectionTitle(doc, 'Список расходов', y);
 
-    doc.fontSize(12).text(`Стас: ${money(stas)}`);
-    doc.text(`Алексей: ${money(alex)}`);
-    doc.text(`Общие: ${money(common)}`);
+        const header = [
+          { title: 'Дата', x: 46, w: 60 },
+          { title: 'Канал', x: 112, w: 70 },
+          { title: 'Тип', x: 188, w: 120 },
+          { title: 'Комментарий', x: 314, w: 145 },
+          { title: 'Сумма', x: 462, w: 82, align: 'right' },
+        ];
+
+        y = drawTableHeader(doc, y, header);
+
+        filtered.forEach((row, index) => {
+          const rawDate = getCell(row, ['Дата', 'date'], 0);
+          const channel =
+            String(getCell(row, ['Канал', 'channel'], 3)).trim() || 'Общие';
+          const type = String(getCell(row, ['Тип', 'type'], 1)).trim();
+          const amount = toNumber(getCell(row, ['Сумма', 'amount'], 2));
+          const comment =
+            String(getCell(row, ['Комментарий', 'comment'], 9)).trim();
+
+          y = drawTableRow(
+            doc,
+            y,
+            [
+              { value: rawDate, x: 46, w: 60 },
+              { value: channel, x: 112, w: 70 },
+              { value: type || '-', x: 188, w: 120 },
+              { value: comment || '-', x: 314, w: 145 },
+              { value: money(amount), x: 462, w: 82, align: 'right' },
+            ],
+            index
+          );
+        });
+
+    y = ensurePage(doc, y, 50);
+    y += 12;
+
+    doc.moveTo(PDF.left, y).lineTo(PDF.right, y).strokeColor(PDF.line).stroke();
+    y += 18;
+
+    doc
+      .fillColor(PDF.dark)
+      .fontSize(16)
+      .text(`ИТОГО: ${money(total)}`, PDF.left, y, {
+        width: PDF.width,
+        align: 'right',
+      });
 
     doc.end();
   } catch (error) {
@@ -2433,18 +2555,15 @@ app.get('/expenses-report/pdf', async (req, res) => {
   }
 });
 
-// ===== ОБЩИЙ ОТЧЁТ БИЗНЕСА =====
+// ================= ОБЩИЙ ОТЧЁТ БИЗНЕСА =================
+
 app.get('/business-report/html', async (req, res) => {
   try {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-
     res.send(`
 <!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <title>Отчёт</title>
-</head>
+<head><meta charset="utf-8"><title>Отчёт</title></head>
 <body style="font-family: Arial; padding: 20px;">
   <h1>TechnoOpt</h1>
   <h2>Общий отчёт бизнеса</h2>
@@ -2458,108 +2577,155 @@ app.get('/business-report/html', async (req, res) => {
   }
 });
 
-// PDF отчет
 app.get('/business-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
     const doc = setupPdf(res, 'business-report.pdf');
 
-    pdfHeader(doc, 'Общий отчёт бизнеса', data);
+    let y = drawTop(doc, 'Общий отчёт бизнеса', periodText(data));
 
-    doc.fontSize(13).text('Основные показатели');
-    doc.moveDown(0.5);
+    drawCard(doc, 36, y, 122, 'Выручка', money(data.revenue));
+    drawCard(doc, 169, y, 122, 'Валовая прибыль', money(data.totalProfit));
+    drawCard(doc, 302, y, 122, 'Расходы', money(data.expenses));
+    drawCard(doc, 435, y, 122, 'Чистая прибыль', money(data.netProfit));
 
-    doc.fontSize(11);
-    doc.text(`Выручка: ${money(data.revenue)}`);
-    doc.text(`Валовая прибыль: ${money(data.totalProfit)}`);
-    doc.text(`Расходы: ${money(data.expenses)}`);
-    doc.text(`Чистая прибыль: ${money(data.netProfit)}`);
-    doc.text(`Стас: ${money(data.myNet)}`);
-    doc.text(`Алексей: ${money(data.alexNet)}`);
-    doc.text(`Продаж: ${data.salesCount}`);
-    doc.text(`Средний чек: ${money(data.avgCheck)}`);
-    doc.text(`Средняя прибыль: ${money(data.avgProfit)}`);
-    doc.text(`Маржинальность: ${data.margin.toFixed(1)}%`);
+    y += 82;
 
-    doc.moveDown();
+    drawCard(doc, 36, y, 122, 'Стас', money(data.myNet));
+    drawCard(doc, 169, y, 122, 'Алексей', money(data.alexNet));
+    drawCard(doc, 302, y, 122, 'Продаж', String(data.salesCount));
+    drawCard(doc, 435, y, 122, 'Маржинальность', `${Number(data.margin || 0).toFixed(1)}%`);
 
-    doc.fontSize(13).text('Доп. доходы 50/50');
-    doc.moveDown(0.5);
-    doc.fontSize(11);
+    y += 86;
 
-    doc.text(`Доход: ${money(data.sideIncomeTotal || 0)}`);
-    doc.text(`Расход: ${money(data.sideIncomeExpense || 0)}`);
-    doc.text(`Общая чистая прибыль: ${money(data.sideIncomeProfit || 0)}`);
-    doc.text(`Стас: ${money(data.sideIncomeStas || 0)}`);
-    doc.text(`Алексей: ${money(data.sideIncomeAlexey || 0)}`);
+    y = drawSectionTitle(doc, 'Каналы продаж', y);
+
+    y = drawTableHeader(doc, y, [
+      { title: 'Канал', x: 46, w: 100 },
+      { title: 'Выручка', x: 180, w: 110, align: 'right' },
+      { title: 'Прибыль', x: 320, w: 110, align: 'right' },
+      { title: 'Продаж', x: 470, w: 70, align: 'right' },
+    ]);
+
+    const channels = [
+      {
+        name: 'Каспий',
+        revenue: data.kaspiRevenue,
+        profit: data.kaspiProfit,
+        count: data.kaspiCount,
+      },
+      {
+        name: 'ОПТ',
+        revenue: data.optRevenue,
+        profit: data.optProfit,
+        count: data.optCount,
+      },
+    ];
+
+    channels.forEach((item, index) => {
+      y = drawTableRow(
+        doc,
+        y,
+        [
+          { value: item.name, x: 46, w: 100 },
+          { value: money(item.revenue), x: 180, w: 110, align: 'right' },
+          { value: money(item.profit), x: 320, w: 110, align: 'right' },
+          { value: item.count, x: 470, w: 70, align: 'right' },
+        ],
+        index
+      );
+    });
+
+    y += 20;
+    y = drawSectionTitle(doc, 'Расходы по каналам', y);
+
+    y = drawTableHeader(doc, y, [
+      { title: 'Канал', x: 46, w: 100 },
+      { title: 'Прибыль до расходов', x: 170, w: 120, align: 'right' },
+      { title: 'Расходы', x: 310, w: 100, align: 'right' },
+      { title: 'Чистая прибыль', x: 430, w: 115, align: 'right' },
+    ]);
+
+    const expenseChannels = [
+      {
+        name: 'Каспий',
+        profit: data.kaspiProfit || 0,
+        expenses: data.kaspiExpenses || 0,
+        net: data.kaspiNetProfit || 0,
+      },
+      {
+        name: 'ОПТ',
+        profit: data.optProfit || 0,
+        expenses: data.optExpenses || 0,
+        net: data.optNetProfit || 0,
+      },
+      {
+        name: 'Общие',
+        profit: 0,
+        expenses: data.commonExpenses || 0,
+        net: -(data.commonExpenses || 0),
+      },
+    ];
+
+    expenseChannels.forEach((item, index) => {
+      y = drawTableRow(
+        doc,
+        y,
+        [
+          { value: item.name, x: 46, w: 100 },
+          { value: money(item.profit), x: 170, w: 120, align: 'right' },
+          { value: money(item.expenses), x: 310, w: 100, align: 'right' },
+          { value: money(item.net), x: 430, w: 115, align: 'right' },
+        ],
+        index
+      );
+    });
+
+    y += 20;
+    y = drawSectionTitle(doc, 'Доп. доходы 50/50', y);
+
+    drawCard(doc, 36, y, 122, 'Доход', money(data.sideIncomeTotal || 0));
+    drawCard(doc, 169, y, 122, 'Расход', money(data.sideIncomeExpense || 0));
+    drawCard(doc, 302, y, 122, 'Чистая прибыль', money(data.sideIncomeProfit || 0));
+    drawCard(doc, 435, y, 122, 'Итого общий', money(data.totalNetWithSideIncome || 0));
+
+    y += 82;
+
+    drawCard(doc, 36, y, 255, 'Стас итог с доп. доходами', money(data.myNetWithSideIncome || data.myNet || 0));
+    drawCard(doc, 302, y, 255, 'Алексей итог с доп. доходами', money(data.alexNetWithSideIncome || data.alexNet || 0));
+
+    y += 86;
 
     if (Array.isArray(data.sideIncomeItems) && data.sideIncomeItems.length > 0) {
-      doc.moveDown(0.5);
-      doc.text('Расшифровка доп. доходов:');
+      y = drawSectionTitle(doc, 'Расшифровка доп. доходов', y);
+
+      y = drawTableHeader(doc, y, [
+        { title: 'Дата', x: 46, w: 65 },
+        { title: 'Тип / описание', x: 120, w: 190 },
+        { title: 'Доход', x: 320, w: 70, align: 'right' },
+        { title: 'Расход', x: 395, w: 70, align: 'right' },
+        { title: 'Чистая', x: 470, w: 75, align: 'right' },
+      ]);
 
       data.sideIncomeItems.forEach((item, index) => {
-        doc.text(
-          `${index + 1}. ${item.date || ''} / ${item.type || 'Без типа'} / ${item.description || ''}`
+        y = drawTableRow(
+          doc,
+          y,
+          [
+            { value: item.date || '', x: 46, w: 65 },
+            { value: `${item.type || '-'} / ${item.description || '-'}`, x: 120, w: 190 },
+            { value: money(item.income), x: 320, w: 70, align: 'right' },
+            { value: money(item.expense), x: 395, w: 70, align: 'right' },
+            { value: money(item.profit), x: 470, w: 75, align: 'right' },
+          ],
+          index
         );
-
-        doc.text(
-          `   Доход: ${money(item.income)} / Расход: ${money(item.expense)} / Чистая: ${money(item.profit)}`
-        );
-
-        doc.text(
-          `   Оплатил расход: ${item.paidBy || 'Не указано'}`
-        );
-
-        doc.text(
-          `   Возврат: Стас ${money(item.refundStas || 0)} / Алексей ${money(item.refundAlexey || 0)}`
-        );
-
-        doc.text(
-          `   Итого: Стас ${money(item.totalStas || 0)} / Алексей ${money(item.totalAlexey || 0)}`
-        );
-
-        if (item.comment) {
-          doc.text(`   Комментарий: ${item.comment}`);
-        }
-
-        doc.moveDown(0.3);
       });
     }
-
-    doc.moveDown();
-
-
-    doc.fontSize(13).text('Итог с доп. доходами');
-    doc.moveDown(0.5);
-
-    doc.fontSize(11);
-    doc.text(`Стас по бизнесу: ${money(data.myNet || 0)}`);
-    doc.text(`Доп. доход Стаса: ${money(data.sideIncomeStas || 0)}`);
-    doc.fontSize(12).text(`Стас итог: ${money(data.myNetWithSideIncome || data.myNet || 0)}`);
-
-    doc.moveDown(0.4);
-
-    doc.fontSize(11);
-    doc.text(`Алексей по бизнесу: ${money(data.alexNet || 0)}`);
-    doc.text(`Доп. доход Алексея: ${money(data.sideIncomeAlexey || 0)}`);
-    doc.fontSize(12).text(`Алексей итог: ${money(data.alexNetWithSideIncome || data.alexNet || 0)}`);
-
-
-    doc.moveDown();
-
-    doc.fontSize(13).text('Каналы');
-    doc.moveDown(0.5);
-    doc.fontSize(11);
-    doc.text(`Каспий: ${money(data.kaspiRevenue)} / прибыль ${money(data.kaspiProfit)} / продаж ${data.kaspiCount}`);
-    doc.text(`ОПТ: ${money(data.optRevenue)} / прибыль ${money(data.optProfit)} / продаж ${data.optCount}`);
-
-    doc.moveDown();
-
 
     doc.end();
   } catch (error) {
     console.error('Ошибка /business-report/pdf:', error);
-
     res.status(500).json({
       error: 'Ошибка PDF бизнес-отчёта',
       details: error.message,
@@ -2567,55 +2733,44 @@ app.get('/business-report/pdf', async (req, res) => {
   }
 });
 
-// ===== ОТЧЁТ ПО КЛИЕНТАМ =====
+// ================= ОТЧЁТ ПО КЛИЕНТАМ =================
 
 app.get('/clients-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
     const doc = setupPdf(res, 'clients-report.pdf');
 
-    pdfHeader(doc, 'Отчёт по клиентам', data);
+    let y = drawTop(doc, 'Отчёт по клиентам', periodText(data));
 
-    let y = doc.y;
+    drawCard(doc, 36, y, 166, 'Выручка', money(data.revenue));
+    drawCard(doc, 214, y, 166, 'Прибыль', money(data.totalProfit));
+    drawCard(doc, 392, y, 166, 'Продаж', String(data.salesCount));
 
-    doc.fontSize(10);
-    doc.text('№', 40, y);
-    doc.text('Клиент', 65, y);
-    doc.text('Выручка', 270, y);
-    doc.text('Прибыль', 370, y);
-    doc.text('Продаж', 475, y);
+    y += 82;
+    y = drawSectionTitle(doc, 'Клиенты', y);
 
-    y += 18;
-    doc.moveTo(40, y).lineTo(555, y).stroke();
-    y += 10;
+    y = drawTableHeader(doc, y, [
+      { title: '№', x: 46, w: 25 },
+      { title: 'Клиент', x: 80, w: 190 },
+      { title: 'Выручка', x: 285, w: 90, align: 'right' },
+      { title: 'Прибыль', x: 390, w: 90, align: 'right' },
+      { title: 'Продаж', x: 500, w: 45, align: 'right' },
+    ]);
 
     data.clients.forEach((item, index) => {
-      y = checkPage(doc, y);
-
-      doc.fontSize(10);
-      doc.text(String(index + 1), 40, y);
-      doc.text(String(item.client || 'Без клиента'), 65, y, { width: 190 });
-      doc.text(money(item.revenue), 270, y);
-      doc.text(money(item.profit), 370, y);
-      doc.text(String(item.count), 485, y);
-
-      y += 28;
+      y = drawTableRow(
+        doc,
+        y,
+        [
+          { value: index + 1, x: 46, w: 25 },
+          { value: item.client || 'Без клиента', x: 80, w: 190 },
+          { value: money(item.revenue), x: 285, w: 90, align: 'right' },
+          { value: money(item.profit), x: 390, w: 90, align: 'right' },
+          { value: item.count, x: 500, w: 45, align: 'right' },
+        ],
+        index
+      );
     });
-
-    y += 10;
-    doc.moveTo(40, y).lineTo(555, y).stroke();
-    y += 18;
-
-    doc.fontSize(12);
-
-    doc.text('ИТОГО выручка:', 330, y, { width: 120 });
-    doc.text(money(data.revenue), 455, y, { width: 90 });
-
-    y += 18;
-
-    doc.text('ИТОГО прибыль:', 330, y, { width: 120 });
-    doc.text(money(data.totalProfit), 455, y, { width: 90 });
-
 
     doc.end();
   } catch (error) {
@@ -2627,49 +2782,46 @@ app.get('/clients-report/pdf', async (req, res) => {
   }
 });
 
-// ===== ОТЧЁТ ПО БРЕНДАМ =====
+// ================= ОТЧЁТ ПО БРЕНДАМ =================
 
 app.get('/brands-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
     const doc = setupPdf(res, 'brands-report.pdf');
 
-    pdfHeader(doc, 'Отчёт по брендам', data);
+    let y = drawTop(doc, 'Отчёт по брендам', periodText(data));
 
-    let y = doc.y;
+    drawCard(doc, 36, y, 166, 'Выручка', money(data.revenue));
+    drawCard(doc, 214, y, 166, 'Прибыль', money(data.totalProfit));
+    drawCard(doc, 392, y, 166, 'Маржинальность', `${Number(data.margin || 0).toFixed(1)}%`);
 
-    doc.fontSize(10);
-    doc.text('№', 40, y);
-    doc.text('Бренд', 65, y);
-    doc.text('Выручка', 170, y);
-    doc.text('Прибыль', 270, y);
-    doc.text('Стас', 370, y);
-    doc.text('Алексей', 455, y);
+    y += 82;
+    y = drawSectionTitle(doc, 'Бренды', y);
 
-    y += 18;
-    doc.moveTo(40, y).lineTo(555, y).stroke();
-    y += 10;
+    y = drawTableHeader(doc, y, [
+      { title: '№', x: 46, w: 25 },
+      { title: 'Бренд', x: 80, w: 100 },
+      { title: 'Выручка', x: 190, w: 85, align: 'right' },
+      { title: 'Прибыль', x: 285, w: 85, align: 'right' },
+      { title: 'Стас', x: 380, w: 75, align: 'right' },
+      { title: 'Алексей', x: 465, w: 80, align: 'right' },
+    ]);
 
     data.brands.forEach((item, index) => {
-      y = checkPage(doc, y);
-
-      doc.fontSize(10);
-      doc.text(String(index + 1), 40, y);
-      doc.text(String(item.brand || 'Другое'), 65, y, { width: 95 });
-      doc.text(money(item.revenue), 170, y);
-      doc.text(money(item.profit), 270, y);
-      doc.text(money(item.myProfit), 370, y);
-      doc.text(money(item.alexProfit), 455, y);
-
-      y += 28;
+      y = drawTableRow(
+        doc,
+        y,
+        [
+          { value: index + 1, x: 46, w: 25 },
+          { value: item.brand || 'Другое', x: 80, w: 100 },
+          { value: money(item.revenue), x: 190, w: 85, align: 'right' },
+          { value: money(item.profit), x: 285, w: 85, align: 'right' },
+          { value: money(item.myProfit), x: 380, w: 75, align: 'right' },
+          { value: money(item.alexProfit), x: 465, w: 80, align: 'right' },
+        ],
+        index
+      );
     });
-
-    y += 10;
-    doc.moveTo(40, y).lineTo(555, y).stroke();
-    y += 18;
-
-    doc.fontSize(13).text(`ИТОГО выручка: ${money(data.revenue)}`);
-    doc.text(`ИТОГО прибыль: ${money(data.totalProfit)}`);
 
     doc.end();
   } catch (error) {
@@ -2716,58 +2868,17 @@ app.get('/stock-report/pdf', async (req, res) => {
       });
     }
 
-    const doc = new PDFDocument({ margin: 32, size: 'A4' });
-
-    const fontPath = 'C:/Windows/Fonts/arial.ttf';
-    if (fs.existsSync(fontPath)) {
-      doc.font(fontPath);
-    }
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      'attachment; filename=stock-report.pdf'
-    );
-
-    doc.pipe(res);
-
-    doc.fontSize(21).text('TechnoOpt', { align: 'center' });
-    doc.moveDown(0.2);
-    doc.fontSize(16).text('Отчёт по остаткам', { align: 'center' });
-
-    doc.moveDown();
-    doc.fontSize(10).text(`Дата отчёта: ${todayRu()}`);
-    doc.moveDown(0.6);
+    const doc = setupPdf(res, 'stock-report.pdf');
 
     let totalQty = 0;
     let totalCost = 0;
 
-    let y = doc.y;
-
-    function drawHeader() {
-      doc.fontSize(9);
-      doc.text('№', 32, y);
-      doc.text('Наименование', 55, y);
-      doc.text('Кол-во', 350, y);
-      doc.text('Себ.', 405, y);
-      doc.text('Итого', 485, y);
-
-      y += 15;
-      doc.moveTo(32, y).lineTo(563, y).stroke();
-      y += 8;
-    }
-
-    drawHeader();
-
-    stockRows.forEach((row, index) => {
+    const items = stockRows.map((row) => {
       const name = cleanProductName(
         getCell(row, ['Наименование', 'name', 'Модель', 'model'], 0)
       );
 
-      const qty = toNumber(
-        getCell(row, ['Количество', 'quantity', 'qty'], 1)
-      );
-
+      const qty = toNumber(getCell(row, ['Количество', 'quantity', 'qty'], 1));
       const price = findPrice(name);
       const cost = price ? toNumber(price.cost) : 0;
       const total = qty * cost;
@@ -2775,43 +2886,45 @@ app.get('/stock-report/pdf', async (req, res) => {
       totalQty += qty;
       totalCost += total;
 
-      if (y > 742) {
-        doc.addPage();
-        y = 32;
-        drawHeader();
-      }
-
-      const nameHeight = doc.heightOfString(name || 'Без названия', {
-        width: 285,
-      });
-
-      const rowHeight = Math.max(22, nameHeight + 6);
-
-      doc.fontSize(8.5);
-      doc.text(String(index + 1), 32, y);
-      doc.text(name || 'Без названия', 55, y, { width: 285 });
-      doc.text(String(qty), 355, y);
-      doc.text(money(cost), 405, y, { width: 70 });
-      doc.text(money(total), 485, y, { width: 75 });
-
-      y += rowHeight;
+      return {
+        name,
+        qty,
+        cost,
+        total,
+      };
     });
 
-    y += 6;
-    doc.moveTo(32, y).lineTo(563, y).stroke();
-    y += 16;
+    let y = drawTop(doc, 'Отчёт по остаткам', `Дата отчёта: ${todayRu()}`);
 
-    if (y > 700) {
-      doc.addPage();
-      y = 32;
-    }
+    drawCard(doc, 36, y, 166, 'Позиций', String(stockRows.length));
+    drawCard(doc, 214, y, 166, 'Всего штук', String(totalQty));
+    drawCard(doc, 392, y, 166, 'Сумма склада', money(totalCost));
 
-    doc.fontSize(12);
-    doc.text(`Всего позиций: ${stockRows.length}`, 32, y);
-    y += 18;
-    doc.text(`Всего штук: ${totalQty}`, 32, y);
-    y += 18;
-    doc.fontSize(14).text(`Сумма склада: ${money(totalCost)}`, 32, y);
+    y += 82;
+    y = drawSectionTitle(doc, 'Остатки', y);
+
+    y = drawTableHeader(doc, y, [
+      { title: '№', x: 46, w: 25 },
+      { title: 'Наименование', x: 80, w: 245 },
+      { title: 'Кол-во', x: 335, w: 55, align: 'right' },
+      { title: 'Себ.', x: 400, w: 65, align: 'right' },
+      { title: 'Итого', x: 475, w: 70, align: 'right' },
+    ]);
+
+    items.forEach((item, index) => {
+      y = drawTableRow(
+        doc,
+        y,
+        [
+          { value: index + 1, x: 46, w: 25 },
+          { value: item.name || 'Без названия', x: 80, w: 245 },
+          { value: item.qty, x: 335, w: 55, align: 'right' },
+          { value: money(item.cost), x: 400, w: 65, align: 'right' },
+          { value: money(item.total), x: 475, w: 70, align: 'right' },
+        ],
+        index
+      );
+    });
 
     doc.end();
   } catch (error) {
@@ -2821,7 +2934,7 @@ app.get('/stock-report/pdf', async (req, res) => {
       details: error.message,
     });
   }
-  });
+});
 
 app.listen(PORT, () => {
   console.log(`Server started on port ${PORT}`);
