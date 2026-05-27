@@ -55,7 +55,9 @@ const TEEG_PRICE_RANGE = 'Прайс!A:E';
 const ARISTON_PRICE_RANGE = 'Лист1!A:E';
 
 const auth = new google.auth.GoogleAuth({
-  keyFile: 'key.json',
+  keyFile: process.env.RENDER
+    ? '/etc/secrets/key.json'
+    : 'key.json',
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
@@ -957,6 +959,8 @@ app.get('/sales', async (req, res) => {
 
       batchId: row.batch_id || '',
     }));
+
+    return res.json(sales);
   }
     const rows = await getRowsFromSpreadsheet(
       SALES_SPREADSHEET_ID,
