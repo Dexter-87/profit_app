@@ -43,6 +43,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   final TextEditingController _clientController = TextEditingController();
   final TextEditingController _orderController = TextEditingController();
 
+  DateTime _selectedDate = DateTime.now();
+
   @override
   void initState() {
     super.initState();
@@ -235,6 +237,28 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     return total;
   }
 
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.'
+        '${date.month.toString().padLeft(2, '0')}.'
+        '${date.year}';
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      locale: const Locale('ru', 'RU'),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
   String _formatMoney(double value) {
     final number = value.round().toString();
     final isNegative = number.startsWith('-');
@@ -347,6 +371,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'items': _invoiceItems,
+          'date': _formatDate(_selectedDate),
         }),
       );
 
@@ -369,6 +394,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         _clientController.clear();
         _orderController.clear();
         _selectedChannel = 'ОПТ';
+        _selectedDate = DateTime.now();
         _filteredPrices = [];
         _filteredClients = [];
       });
@@ -384,762 +410,827 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     }
   }
 
-  Future<void> _saveInvoiceExcel() async {
-    if (_invoiceItems.isEmpty) {
-      _showMessage('Сначала добавь товары в накладную');
-      return;
-    }
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/invoice-excel'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'items': _invoiceItems,
-          'client': _clientController.text.trim(),
-          'channel': _selectedChannel,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        await _saveAndOpenFile(
-          bytes: response.bodyBytes,
-          fileName: 'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.xlsx',
-        );
-        _showMessage('Excel готов');
-      } else {
-        _showMessage('Ошибка Excel: ${response.body}');
+    Future<void> _saveInvoiceExcel() async {
+      if (_invoiceItems.isEmpty) {
+        _showMessage('Сначала добавь товары в накладную');
+        return;
       }
-    } catch (e) {
-      _showMessage('Ошибка Excel: $e');
-    }
-  }
 
-  Future<void> _saveInvoicePdf() async {
-    if (_invoiceItems.isEmpty) {
-      _showMessage('Сначала добавь товары в накладную');
-      return;
-    }
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/invoice-pdf'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'items': _invoiceItems,
-          'client': _clientController.text.trim(),
-          'channel': _selectedChannel,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        await _saveAndOpenFile(
-          bytes: response.bodyBytes,
-          fileName: 'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/invoice-excel'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'items': _invoiceItems,
+            'client': _clientController.text.trim(),
+            'channel': _selectedChannel,
+          }),
         );
-        _showMessage('PDF готов');
-      } else {
-        _showMessage('Ошибка PDF: ${response.body}');
+
+        if (response.statusCode == 200) {
+          await _saveAndOpenFile(
+            bytes: response.bodyBytes,
+            fileName: 'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+          );
+          _showMessage('Excel готов');
+        } else {
+          _showMessage('Ошибка Excel: ${response.body}');
+        }
+      } catch (e) {
+        _showMessage('Ошибка Excel: $e');
       }
-    } catch (e) {
-      _showMessage('Ошибка PDF: $e');
-    }
-  }
-
-  void _showMessage(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
-    );
-  }
-
-  Widget _channelButton(String title) {
-    final selected = _selectedChannel == title;
-
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: () {
-          setState(() {
-            _selectedChannel = title;
-
-            if (_selectedChannel == 'ОПТ') {
-              _commissionController.clear();
-              _orderController.clear();
-            }
-          });
-        },
-        child: Container(
-          height: 48,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            gradient: selected
-                ? const LinearGradient(
-                    colors: [Color(0xFF4DA3FF), Color(0xFF2D7DFF)],
-                  )
-                : null,
-            color: selected ? null : AppColors.bg,
-            border: Border.all(
-              color: selected ? Colors.transparent : AppColors.stroke,
-            ),
-          ),
-          child: Text(
-            title,
-            style: TextStyle(
-              color: selected ? Colors.white : AppColors.textSecondary,
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _priceTypeDropdown() {
-    final types = _priceTypes;
-
-    if (!types.contains(_selectedPriceType)) {
-      _selectedPriceType = types.first;
     }
 
-    return Container(
-      decoration: AppUi.cardDecoration(
-        color: AppColors.bg,
-        radius: 18,
-        borderColor: AppColors.stroke,
-        shadows: const [],
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedPriceType,
-          dropdownColor: AppColors.bg,
-          iconEnabledColor: AppColors.textMain,
-          isExpanded: true,
-          style: const TextStyle(
-            color: AppColors.textMain,
-            fontWeight: FontWeight.w800,
-          ),
-          items: types.map((type) {
-            return DropdownMenuItem(
-              value: type,
-              child: Text(type),
-            );
-          }).toList(),
-          onChanged: (value) {
-            if (value == null) return;
+    Future<void> _saveInvoicePdf() async {
+      if (_invoiceItems.isEmpty) {
+        _showMessage('Сначала добавь товары в накладную');
+        return;
+      }
 
+      try {
+        final response = await http.post(
+          Uri.parse('$baseUrl/invoice-pdf'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'items': _invoiceItems,
+            'client': _clientController.text.trim(),
+            'channel': _selectedChannel,
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          await _saveAndOpenFile(
+            bytes: response.bodyBytes,
+            fileName: 'nakladnaya_${DateTime.now().millisecondsSinceEpoch}.pdf',
+          );
+          _showMessage('PDF готов');
+        } else {
+          _showMessage('Ошибка PDF: ${response.body}');
+        }
+      } catch (e) {
+        _showMessage('Ошибка PDF: $e');
+      }
+    }
+
+    void _showMessage(String text) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(text)),
+      );
+    }
+
+    Widget _channelButton(String title) {
+      final selected = _selectedChannel == title;
+
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () {
             setState(() {
-              _selectedPriceType = value;
-              _priceController.clear();
-              _costController.clear();
+              _selectedChannel = title;
 
-              if (_productController.text.trim().isEmpty) {
-                _filteredPrices = [];
+              if (_selectedChannel == 'ОПТ') {
+                _commissionController.clear();
+                _orderController.clear();
               }
             });
-
-            if (_productController.text.trim().isNotEmpty) {
-              _onProductChanged(_productController.text);
-            }
           },
-        ),
-      ),
-    );
-  }
-
-  Widget _input({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    TextInputType? keyboardType,
-    int maxLines = 1,
-    void Function(String)? onChanged,
-  }) {
-    return Container(
-      decoration: AppUi.cardDecoration(
-        color: AppColors.bg,
-        radius: 18,
-        borderColor: AppColors.stroke,
-        shadows: const [],
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        onChanged: onChanged,
-        style: const TextStyle(
-          color: AppColors.textMain,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-        ),
-        decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 21),
-          hintText: hint,
-          hintStyle: const TextStyle(
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w500,
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _productSearchBlock() {
-    return Column(
-      children: [
-        _priceTypeDropdown(),
-        const SizedBox(height: 10),
-        _input(
-          controller: _productController,
-          hint: _loadingPrices ? 'Загружаю прайс...' : 'Товар',
-          icon: Icons.inventory_2_outlined,
-          onChanged: _onProductChanged,
-        ),
-        if (_filteredPrices.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            constraints: const BoxConstraints(maxHeight: 260),
-            decoration: AppUi.cardDecoration(
-              color: AppColors.bg,
-              radius: 18,
-              borderColor: const Color(0xFF4DA3FF).withOpacity(0.35),
-              shadows: const [],
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              itemCount: _filteredPrices.length,
-              separatorBuilder: (_, __) => const Divider(
-                color: AppColors.stroke,
-                height: 1,
+          child: Container(
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: selected
+                  ? const LinearGradient(
+                      colors: [Color(0xFF4DA3FF), Color(0xFF2D7DFF)],
+                    )
+                  : null,
+              color: selected ? null : AppColors.bg,
+              border: Border.all(
+                color: selected ? Colors.transparent : AppColors.stroke,
               ),
-              itemBuilder: (context, index) {
-                final item = _filteredPrices[index];
-
-                final brand = _field(item, 'brand', 'brand');
-                final model = _field(item, 'model', 'model');
-                final source = _field(item, 'source', 'source');
-                final priceType = _field(item, 'price_type', 'priceType');
-                final price = _toDouble((item['price'] ?? 0).toString());
-                final cost = _toDouble((item['cost'] ?? 0).toString());
-
-                return ListTile(
-                  dense: true,
-                  onTap: () => _selectProduct(item),
-                  title: Text(
-                    '$brand $model'.trim(),
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '$source • $priceType • цена ${_formatMoney(price)} • себ. ${_formatMoney(cost)}',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                  trailing: const Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary,
-                  ),
-                );
-              },
+            ),
+            child: Text(
+              title,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.textSecondary,
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+              ),
             ),
           ),
-        ],
-      ],
-    );
-  }
-
-  Widget _clientSearchBlock() {
-    return Column(
-      children: [
-        _input(
-          controller: _clientController,
-          hint: 'Клиент',
-          icon: Icons.person_outline,
-          onChanged: _onClientChanged,
         ),
-        if (_filteredClients.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            constraints: const BoxConstraints(maxHeight: 230),
-            decoration: AppUi.cardDecoration(
-              color: AppColors.bg,
-              radius: 18,
-              borderColor: const Color(0xFF4DA3FF).withOpacity(0.30),
-              shadows: const [],
-            ),
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              itemCount: _filteredClients.length,
-              separatorBuilder: (_, __) => const Divider(
-                color: AppColors.stroke,
-                height: 1,
-              ),
-              itemBuilder: (context, index) {
-                final client = _filteredClients[index];
+      );
+    }
 
-                return ListTile(
-                  dense: true,
-                  onTap: () {
-                    setState(() {
-                      _clientController.text = client;
-                      _filteredClients = [];
-                    });
-                  },
-                  leading: const Icon(
-                    Icons.person_outline,
-                    color: AppColors.textSecondary,
-                    size: 20,
-                  ),
-                  title: Text(
-                    client,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                  trailing: const Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary,
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ],
-    );
-  }
+    Widget _priceTypeDropdown() {
+      final types = _priceTypes;
 
-  Widget _profitPreview() {
-    final profit = _lineProfit;
-    final isGood = profit >= 0;
+      if (!types.contains(_selectedPriceType)) {
+        _selectedPriceType = types.first;
+      }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: AppUi.cardDecoration(
-        color: AppColors.bg,
-        radius: 22,
-        borderColor: isGood
-            ? const Color(0xFF22C55E).withOpacity(0.35)
-            : AppColors.danger.withOpacity(0.35),
-        shadows: const [],
-      ),
-      child: Row(
-        children: [
-          AppUi.iconBadge(
-            icon: isGood
-                ? Icons.trending_up_rounded
-                : Icons.trending_down_rounded,
-            accent: isGood ? const Color(0xFF22C55E) : AppColors.danger,
-            size: 42,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Ожидаемая прибыль',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatMoney(profit),
-                  style: TextStyle(
-                    color: isGood ? const Color(0xFF22C55E) : AppColors.danger,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _invoiceBlock() {
-    return AppUi.sectionCard(
-      title: 'Накладная',
-      icon: Icons.receipt_long_outlined,
-      accent: const Color(0xFF06B6D4),
-      child: Column(
-        children: [
-          if (_invoiceItems.isEmpty)
-            AppUi.emptyBlock('Товары пока не добавлены')
-          else
-            Column(
-              children: List.generate(_invoiceItems.length, (index) {
-                final item = _invoiceItems[index];
-                final name = item['name'].toString();
-                final quantity = item['quantity'] as int;
-                final price = item['price'] as double;
-                final profit = item['profit'] as double;
-                final channel = (item['channel'] ?? '').toString();
-                final client = (item['client'] ?? '').toString();
-                final orderNumber = (item['orderNumber'] ?? '').toString();
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: AppUi.cardDecoration(
-                    color: AppColors.bg,
-                    radius: 18,
-                    borderColor: AppColors.stroke,
-                    shadows: const [],
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              name,
-                              style: const TextStyle(
-                                color: AppColors.textMain,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              '$quantity шт • ${_formatMoney(price)} • прибыль ${_formatMoney(profit)}',
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              [
-                                channel,
-                                if (client.isNotEmpty) client,
-                                if (orderNumber.isNotEmpty) '№ $orderNumber',
-                              ].join(' • '),
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => _removeInvoiceItem(index),
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: AppColors.danger,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-            ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Итого: ${_formatMoney(_invoiceTotal)}',
-                  style: const TextStyle(
-                    color: AppColors.textMain,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              Text(
-                'Прибыль: ${_formatMoney(_invoiceProfit)}',
-                style: const TextStyle(
-                  color: Color(0xFF22C55E),
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _outlineActionButton({
-    required String text,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
-      child: Container(
-        height: 50,
-        alignment: Alignment.center,
+      return Container(
         decoration: AppUi.cardDecoration(
           color: AppColors.bg,
           radius: 18,
           borderColor: AppColors.stroke,
           shadows: const [],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: AppColors.textMain, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              text,
-              style: const TextStyle(
-                color: AppColors.textMain,
-                fontWeight: FontWeight.w900,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _headerCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: AppUi.cardDecoration(
-        radius: 28,
-        borderColor: const Color(0xFF4DA3FF).withOpacity(0.25),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withOpacity(0.02),
-            const Color(0xFF4DA3FF).withOpacity(0.08),
-          ],
-        ),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Новый заказ',
-            style: TextStyle(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _selectedPriceType,
+            dropdownColor: AppColors.bg,
+            iconEnabledColor: AppColors.textMain,
+            isExpanded: true,
+            style: const TextStyle(
               color: AppColors.textMain,
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Добавляй товары в накладную, сохраняй продажи и формируй Excel/PDF.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 14,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+            items: types.map((type) {
+              return DropdownMenuItem(
+                value: type,
+                child: Text(type),
+              );
+            }).toList(),
+            onChanged: (value) {
+              if (value == null) return;
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        title: const Text(
-          'Заказ',
-          style: TextStyle(
-            color: AppColors.textMain,
-            fontWeight: FontWeight.w900,
-            fontSize: 24,
+              setState(() {
+                _selectedPriceType = value;
+                _priceController.clear();
+                _costController.clear();
+
+                if (_productController.text.trim().isEmpty) {
+                  _filteredPrices = [];
+                }
+              });
+
+              if (_productController.text.trim().isNotEmpty) {
+                _onProductChanged(_productController.text);
+              }
+            },
           ),
         ),
-        backgroundColor: AppColors.bg,
-        elevation: 0,
-        actions: [
-          IconButton(
-            onPressed: () {
-              _loadPrices();
-              _loadClients();
-            },
-            icon: const Icon(Icons.refresh, color: AppColors.textMain),
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-            children: [
-              _headerCard(),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Тип продажи',
-                icon: Icons.swap_horiz_rounded,
-                accent: const Color(0xFF4DA3FF),
-                child: Row(
-                  children: [
-                    _channelButton('Каспий'),
-                    const SizedBox(width: 10),
-                    _channelButton('ОПТ'),
-                  ],
+      );
+    }
+
+    Widget _dateBlock() {
+      return AppUi.sectionCard(
+        title: 'Дата продажи',
+        icon: Icons.calendar_month_rounded,
+        accent: const Color(0xFF8B5CF6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: _pickDate,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 18,
+            ),
+            decoration: AppUi.cardDecoration(
+              color: AppColors.bg,
+              radius: 18,
+              borderColor: AppColors.stroke,
+              shadows: const [],
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_rounded,
+                  color: AppColors.textSecondary,
+                  size: 20,
                 ),
-              ),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Товар и клиент',
-                icon: Icons.inventory_2_outlined,
-                accent: const Color(0xFF22C55E),
-                child: Column(
-                  children: [
-                    _productSearchBlock(),
-                    const SizedBox(height: 10),
-                    _clientSearchBlock(),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (_selectedChannel == 'Каспий') ...[
-                AppUi.sectionCard(
-                  title: 'Данные Kaspi',
-                  icon: Icons.storefront_outlined,
-                  accent: const Color(0xFF06B6D4),
-                  child: Column(
-                    children: [
-                      _input(
-                        controller: _orderController,
-                        hint: 'Номер заказа Каспий',
-                        icon: Icons.confirmation_number_outlined,
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 10),
-                      _input(
-                        controller: _commissionController,
-                        hint: 'Комиссия Kaspi',
-                        icon: Icons.percent_rounded,
-                        keyboardType: TextInputType.number,
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ],
+                const SizedBox(width: 12),
+                Text(
+                  _formatDate(_selectedDate),
+                  style: const TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const Spacer(),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textSecondary,
+                ),
               ],
-              AppUi.sectionCard(
-                title: 'Финансы',
-                icon: Icons.payments_outlined,
-                accent: const Color(0xFFF59E0B),
-                child: Column(
-                  children: [
-                    _input(
-                      controller: _quantityController,
-                      hint: 'Количество',
-                      icon: Icons.format_list_numbered_rounded,
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => setState(() {}),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget _input({
+      required TextEditingController controller,
+      required String hint,
+      required IconData icon,
+      TextInputType? keyboardType,
+      int maxLines = 1,
+      void Function(String)? onChanged,
+    }) {
+      return Container(
+        decoration: AppUi.cardDecoration(
+          color: AppColors.bg,
+          radius: 18,
+          borderColor: AppColors.stroke,
+          shadows: const [],
+        ),
+        child: TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          onChanged: onChanged,
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 21),
+            hintText: hint,
+            hintStyle: const TextStyle(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget _productSearchBlock() {
+      return Column(
+        children: [
+          _priceTypeDropdown(),
+          const SizedBox(height: 10),
+          _input(
+            controller: _productController,
+            hint: _loadingPrices ? 'Загружаю прайс...' : 'Товар',
+            icon: Icons.inventory_2_outlined,
+            onChanged: _onProductChanged,
+          ),
+          if (_filteredPrices.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 260),
+              decoration: AppUi.cardDecoration(
+                color: AppColors.bg,
+                radius: 18,
+                borderColor: const Color(0xFF4DA3FF).withOpacity(0.35),
+                shadows: const [],
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                itemCount: _filteredPrices.length,
+                separatorBuilder: (_, __) => const Divider(
+                  color: AppColors.stroke,
+                  height: 1,
+                ),
+                itemBuilder: (context, index) {
+                  final item = _filteredPrices[index];
+
+                  final brand = _field(item, 'brand', 'brand');
+                  final model = _field(item, 'model', 'model');
+                  final source = _field(item, 'source', 'source');
+                  final priceType = _field(item, 'price_type', 'priceType');
+                  final price = _toDouble((item['price'] ?? 0).toString());
+                  final cost = _toDouble((item['cost'] ?? 0).toString());
+
+                  return ListTile(
+                    dense: true,
+                    onTap: () => _selectProduct(item),
+                    title: Text(
+                      '$brand $model'.trim(),
+                      style: const TextStyle(
+                        color: AppColors.textMain,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
                     ),
-                    const SizedBox(height: 10),
-                    Row(
+                    subtitle: Text(
+                      '$source • $priceType • цена ${_formatMoney(price)} • себ. ${_formatMoney(cost)}',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+      Widget _clientSearchBlock() {
+        return Column(
+          children: [
+            _input(
+              controller: _clientController,
+              hint: 'Клиент',
+              icon: Icons.person_outline,
+              onChanged: _onClientChanged,
+            ),
+            if (_filteredClients.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 230),
+                decoration: AppUi.cardDecoration(
+                  color: AppColors.bg,
+                  radius: 18,
+                  borderColor: const Color(0xFF4DA3FF).withOpacity(0.30),
+                  shadows: const [],
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  itemCount: _filteredClients.length,
+                  separatorBuilder: (_, __) => const Divider(
+                    color: AppColors.stroke,
+                    height: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final client = _filteredClients[index];
+
+                    return ListTile(
+                      dense: true,
+                      onTap: () {
+                        setState(() {
+                          _clientController.text = client;
+                          _filteredClients = [];
+                        });
+                      },
+                      leading: const Icon(
+                        Icons.person_outline,
+                        color: AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      title: Text(
+                        client,
+                        style: const TextStyle(
+                          color: AppColors.textMain,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: AppColors.textSecondary,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        );
+      }
+
+      Widget _profitPreview() {
+        final profit = _lineProfit;
+        final isGood = profit >= 0;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: AppUi.cardDecoration(
+            color: AppColors.bg,
+            radius: 22,
+            borderColor: isGood
+                ? const Color(0xFF22C55E).withOpacity(0.35)
+                : AppColors.danger.withOpacity(0.35),
+            shadows: const [],
+          ),
+          child: Row(
+            children: [
+              AppUi.iconBadge(
+                icon: isGood
+                    ? Icons.trending_up_rounded
+                    : Icons.trending_down_rounded,
+                accent: isGood ? const Color(0xFF22C55E) : AppColors.danger,
+                size: 42,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Ожидаемая прибыль',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatMoney(profit),
+                      style: TextStyle(
+                        color: isGood ? const Color(0xFF22C55E) : AppColors.danger,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      Widget _invoiceBlock() {
+        return AppUi.sectionCard(
+          title: 'Накладная',
+          icon: Icons.receipt_long_outlined,
+          accent: const Color(0xFF06B6D4),
+          child: Column(
+            children: [
+              if (_invoiceItems.isEmpty)
+                AppUi.emptyBlock('Товары пока не добавлены')
+              else
+                Column(
+                  children: List.generate(_invoiceItems.length, (index) {
+                    final item = _invoiceItems[index];
+                    final name = item['name'].toString();
+                    final quantity = item['quantity'] as int;
+                    final price = item['price'] as double;
+                    final profit = item['profit'] as double;
+                    final channel = (item['channel'] ?? '').toString();
+                    final client = (item['client'] ?? '').toString();
+                    final orderNumber = (item['orderNumber'] ?? '').toString();
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: AppUi.cardDecoration(
+                        color: AppColors.bg,
+                        radius: 18,
+                        borderColor: AppColors.stroke,
+                        shadows: const [],
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    color: AppColors.textMain,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '$quantity шт • ${_formatMoney(price)}',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                if (channel.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      channel,
+                                      style: const TextStyle(
+                                        color: Color(0xFF4DA3FF),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                if (client.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      client,
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                if (orderNumber.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      'Заказ: $orderNumber',
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                _formatMoney(profit),
+                                style: const TextStyle(
+                                  color: Color(0xFF22C55E),
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              InkWell(
+                                onTap: () => _removeInvoiceItem(index),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.danger.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: AppColors.danger,
+                                    size: 18,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+            ],
+          ),
+        );
+      }
+
+        Widget _totalsBlock() {
+          return AppUi.sectionCard(
+            title: 'Итого по накладной',
+            icon: Icons.summarize_outlined,
+            accent: const Color(0xFF22C55E),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: AppUi.cardDecoration(
+                      color: AppColors.bg,
+                      radius: 18,
+                      borderColor: AppColors.stroke,
+                      shadows: const [],
+                    ),
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: _input(
-                            controller: _costController,
-                            hint: 'Себестоимость',
-                            icon: Icons.money_off_outlined,
-                            keyboardType: TextInputType.number,
-                            onChanged: (_) => setState(() {}),
+                        const Text(
+                          'Сумма',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _input(
-                            controller: _priceController,
-                            hint: 'РРЦ',
-                            icon: Icons.attach_money_rounded,
-                            keyboardType: TextInputType.number,
-                            onChanged: (_) => setState(() {}),
+                        const SizedBox(height: 6),
+                        Text(
+                          _formatMoney(_invoiceTotal),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    _profitPreview(),
-                    const SizedBox(height: 14),
-                    _outlineActionButton(
-                      text: '+ ДОБАВИТЬ В НАКЛАДНУЮ',
-                      icon: Icons.add_rounded,
-                      onTap: _addItemToInvoice,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: AppUi.cardDecoration(
+                      color: AppColors.bg,
+                      radius: 18,
+                      borderColor: const Color(0xFF22C55E).withOpacity(0.35),
+                      shadows: const [],
+                    ),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Прибыль',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _formatMoney(_invoiceProfit),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF22C55E),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        Widget _sectionTitle(String title) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          );
+        }
+
+        Widget _mainFormCard() {
+          return AppUi.sectionCard(
+            title: 'Товар и клиент',
+            icon: Icons.add_shopping_cart_rounded,
+            accent: const Color(0xFF4DA3FF),
+            child: Column(
+              children: [
+                _sectionTitle('Канал продажи'),
+                Row(
+                  children: [
+                    _channelButton('ОПТ'),
+                    const SizedBox(width: 10),
+                    _channelButton('Каспий'),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                _sectionTitle('Клиент'),
+                _clientSearchBlock(),
+                const SizedBox(height: 16),
+
+                _sectionTitle('Товар'),
+                _productSearchBlock(),
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: _input(
+                        controller: _quantityController,
+                        hint: 'Кол-во',
+                        icon: Icons.numbers_rounded,
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _input(
+                        controller: _costController,
+                        hint: 'Себестоимость',
+                        icon: Icons.price_change_outlined,
+                        keyboardType: TextInputType.number,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              AppUi.sectionCard(
-                title: 'Комментарий',
-                icon: Icons.notes_rounded,
-                accent: const Color(0xFF8B5CF6),
-                child: _input(
-                  controller: _commentController,
-                  hint: 'Комментарий (+ для 50/50)',
-                  icon: Icons.add_comment_outlined,
+                const SizedBox(height: 12),
+
+                _input(
+                  controller: _priceController,
+                  hint: 'Цена продажи',
+                  icon: Icons.sell_outlined,
+                  keyboardType: TextInputType.number,
                 ),
-              ),
-              const SizedBox(height: 16),
-              _invoiceBlock(),
-              const SizedBox(height: 22),
+                const SizedBox(height: 12),
+
+                if (_selectedChannel == 'Каспий') ...[
+                  _input(
+                    controller: _orderController,
+                    hint: 'Номер заказа Каспий',
+                    icon: Icons.confirmation_number_outlined,
+                    keyboardType: TextInputType.text,
+                  ),
+                  const SizedBox(height: 12),
+                  _input(
+                    controller: _commissionController,
+                    hint: 'Комиссия Kaspi',
+                    icon: Icons.percent_rounded,
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                _input(
+                  controller: _commentController,
+                  hint: 'Комментарий',
+                  icon: Icons.comment_outlined,
+                ),
+                const SizedBox(height: 16),
+
+                _profitPreview(),
+                const SizedBox(height: 16),
+
+                GradientButton(
+                  text: 'Добавить товар в накладную',
+                  onTap: _addItemToInvoice,
+                ),
+              ],
+            ),
+          );
+        }
+
+        Widget _actionButtons() {
+          return Column(
+            children: [
               GradientButton(
-                text: _isSaving ? 'СОХРАНЯЮ...' : '+ ДОБАВИТЬ В ПРОДАЖИ',
+                text: _isSaving ? 'Сохраняю...' : 'Сохранить продажу',
                 onTap: () {
-                  if (_isSaving) return;
-                  _saveOrder();
+                  if (!_isSaving) {
+                    _saveOrder();
+                  }
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: _outlineActionButton(
-                      text: 'EXCEL',
-                      icon: Icons.table_chart_outlined,
-                      onTap: _saveInvoiceExcel,
-                    ),
+                    child: GradientButton(
+                             text: 'Excel',
+                             onTap: _saveInvoiceExcel,
+                           ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: _outlineActionButton(
-                      text: 'PDF',
-                      icon: Icons.picture_as_pdf_outlined,
-                      onTap: _saveInvoicePdf,
-                    ),
+                    child: GradientButton(
+                             text: 'PDF',
+                             onTap: _saveInvoicePdf,
+                           ),
                   ),
                 ],
               ),
-              const SizedBox(height: 40),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+          );
+        }
+          @override
+          Widget build(BuildContext context) {
+            return Scaffold(
+              backgroundColor: AppColors.bg,
+              body: SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      const SizedBox(height: 16),
+
+                      _dateBlock(),
+                      const SizedBox(height: 16),
+
+                      _mainFormCard(),
+                      const SizedBox(height: 16),
+
+                      _invoiceBlock(),
+                      const SizedBox(height: 16),
+
+                      _totalsBlock(),
+                      const SizedBox(height: 16),
+
+                      _actionButtons(),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+        }

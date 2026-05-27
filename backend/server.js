@@ -1051,6 +1051,7 @@ app.post('/add-sale', async (req, res) => {
   try {
     const {
       items,
+      date,
       name,
       model,
       quantity,
@@ -1079,7 +1080,7 @@ app.post('/add-sale', async (req, res) => {
           },
         ];
 
-    const date = todayRu();
+    const saleDate = date || todayRu();
     const batchId = `BATCH-${Date.now()}`;
     const values = [];
 
@@ -1112,7 +1113,7 @@ app.post('/add-sale', async (req, res) => {
         const profit = priceNumber - costNumber - commissionNumber;
 
         values.push([
-          date,
+          saleDate,
           itemChannel,
           productName,
           itemOrderNumber,
@@ -1882,33 +1883,19 @@ async function calculateAnalytics(req, topLimit = 5) {
     clientMap[client].count++;
   }
 
-  let expenses = 0;
-  let kaspiExpenses = 0;
-  let optExpenses = 0;
-  let commonExpenses = 0;
+let expenses = 0;
 
-  for (const row of expenseRows) {
-    const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
-    if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
+for (const row of expenseRows) {
+  const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
 
-    const amount = toNumber(
-      getCell(row, ['Сумма', 'amount', 'Сумма расхода'], 2)
-    );
+  if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
 
-    const expenseChannel = String(
-      getCell(row, ['Канал', 'channel'], 3)
-    ).trim();
+  const amount = toNumber(
+    getCell(row, ['Сумма', 'amount'], 2)
+  );
 
-    expenses += amount;
-
-    if (expenseChannel === 'Каспий' || expenseChannel === 'Каспи') {
-      kaspiExpenses += amount;
-    } else if (expenseChannel === 'ОПТ') {
-      optExpenses += amount;
-    } else {
-      commonExpenses += amount;
-    }
-  }
+  expenses += amount;
+}
 
   for (const row of sideIncomeRows) {
     const rawDate = getCell(row, ['Дата', 'date'], 0);
@@ -2008,10 +1995,175 @@ async function calculateAnalytics(req, topLimit = 5) {
   const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
   const clients = Object.values(clientMap).sort((a, b) => b.profit - a.profit);
 
-  const stasPlan = getPlanValue(planRows, ['стас'], 800000);
-  const alexPlan = getPlanValue(planRows, ['алексей'], 800000);
-  const revenuePlan = getPlanValue(planRows, ['выруч'], 10000000);
-  const profitPlan = getPlanValue(planRows, ['приб'], 800000);
+  const currentMonthName = (() => {
+    const baseDate = from || new Date();
+
+    const monthNames = [
+      'Январь',
+      'Февраль',
+      'Март',
+      'Апрель',
+      'Май',
+      'Июнь',
+      'Июль',
+      'Август',
+      'Сентябрь',
+      'Октябрь',
+      'Ноябрь',
+      'Декабрь',
+    ];
+
+    return monthNames[baseDate.getMonth()];
+  })();
+
+  const currentPlanRow = planRows.find((row) => {
+    const month = String(row['Месяц'] || row.month || '')
+      .trim()
+      .toLowerCase();
+
+    return month === currentMonthName.toLowerCase();
+  });
+
+  const revenuePlan = currentPlanRow
+    ? toNumber(currentPlanRow['ПланКаспий']) + toNumber(currentPlanRow['ПланОПТ'])
+    : 10000000;
+
+  const profitPlan = currentPlanRow
+    ? toNumber(currentPlanRow['План'])
+    : 800000;
+
+  const stasPlan = profitPlan * capitalWorkShares.stasShare;
+  const alexPlan = profitPlan * capitalWorkShares.alexShare;
+
+  // ================= БИЗНЕС ВЫВОДЫ =================
+
+  const insights = [];
+
+  // Лучший бренд
+  if (brands.length > 0) {
+    const topBrand = brands[0];
+
+    const share =
+      totalProfit > 0
+        ? (topBrand.profit / totalProfit) * 100
+        : 0;
+
+    if (share >= 20) {
+      insights.push({
+        type: 'success',
+        icon: '🔥',
+        text: `${topBrand.brand} дал ${share.toFixed(0)}% прибыли за период`,
+      });
+    }
+  }
+
+  // Лучший клиент
+  if (clients.length > 0) {
+    const topClient = clients[0];
+
+    insights.push({
+      type: 'info',
+      icon: '🏆',
+      text: `${topClient.client} — лучший клиент периода`,
+    });
+  }
+
+  // Лучший товар
+  if (topProducts.length > 0) {
+    insights.push({
+      type: 'success',
+      icon: '📦',
+      text: `${topProducts[0].name} — самый прибыльный товар`,
+    });
+  }
+
+  // Маржинальность
+  if (margin < 12) {
+    insights.push({
+      type: 'danger',
+      icon: '⚠️',
+      text: `Маржинальность снизилась до ${margin.toFixed(1)}%`,
+    });
+  } else if (margin > 20) {
+    insights.push({
+      type: 'success',
+      icon: '💰',
+      text: `Маржинальность выросла до ${margin.toFixed(1)}%`,
+    });
+  }
+
+  // Расходы Каспий / ОПТ
+  let kaspiExpenses = 0;
+  let optExpenses = 0;
+  let commonExpenses = 0;
+
+  for (const row of expenseRows) {
+    const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
+
+    if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
+
+    const amount = toNumber(
+      getCell(row, ['Сумма', 'amount'], 2)
+    );
+
+    const expenseChannel = String(
+      getCell(row, ['Канал', 'channel'], 3)
+    ).trim();
+
+    if (expenseChannel === 'Каспий') {
+      kaspiExpenses += amount;
+    } else if (expenseChannel === 'ОПТ') {
+      optExpenses += amount;
+    } else {
+      commonExpenses += amount;
+    }
+  }
+
+  if (kaspiProfit > 0) {
+    const kaspiExpensePercent =
+      (kaspiExpenses / kaspiProfit) * 100;
+
+    if (kaspiExpensePercent > 15) {
+      insights.push({
+        type: 'warning',
+        icon: '📉',
+        text: `Расходы Каспий составляют ${kaspiExpensePercent.toFixed(0)}% прибыли`,
+      });
+    }
+  }
+
+  if (optProfit > 0) {
+    const optExpensePercent =
+      (optExpenses / optProfit) * 100;
+
+    if (optExpensePercent > 15) {
+      insights.push({
+        type: 'warning',
+        icon: '📉',
+        text: `Расходы ОПТ составляют ${optExpensePercent.toFixed(0)}% прибыли`,
+      });
+    }
+  }
+
+  // Выполнение плана
+  if (profitPlan > 0) {
+    const percent =
+      (netProfit / profitPlan) * 100;
+
+    if (percent >= 100) {
+      insights.push({
+        type: 'success',
+        icon: '🚀',
+        text: `План выполнен на ${percent.toFixed(0)}%`,
+      });
+    } else {
+      insights.push({
+        type: 'info',
+        icon: '🎯',
+        text: `До выполнения плана осталось ${money(profitPlan - netProfit)}`,
+      });
+    }
+  }
 
   return {
     dateFrom,
@@ -2019,6 +2171,7 @@ async function calculateAnalytics(req, topLimit = 5) {
     selectedModel,
     model: selectedModel,
 
+    insights,
     revenue,
     totalProfit,
     netProfit,

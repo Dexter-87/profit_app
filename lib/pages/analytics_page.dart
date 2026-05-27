@@ -385,7 +385,14 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Widget _clientRow(Map<String, dynamic> item, int index, double totalProfit) {
-    final client = (item['client'] ?? 'Без клиента').toString();
+    final rawClient = (item['client'] ?? '').toString().trim();
+    final channel = (item['channel'] ?? '').toString().trim();
+
+    final client = rawClient.isNotEmpty
+        ? rawClient
+        : (channel == 'Каспий' || channel == 'Каспи')
+            ? 'Kaspi'
+            : 'Физ.лицо';
     final revenue = _toDouble(item['revenue']);
     final profit = _toDouble(item['profit']);
     final count = (item['count'] ?? 0).toString();
@@ -477,6 +484,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final dailyProfit = _safeList(_data['dailyProfit']);
     final brands = _safeList(_data['brands']);
     final clients = _safeList(_data['clients']);
+    final insights = _safeList(_data['insights']);
 
     final revenueProgress =
         revenuePlan == 0 ? 0.0 : (revenue / revenuePlan).clamp(0.0, 1.0);
@@ -763,6 +771,67 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                             compact: true,
                           ),
 
+if (insights.isNotEmpty) ...[
+  AppUi.sectionCard(
+    title: 'Бизнес-инсайты',
+    icon: Icons.auto_awesome_outlined,
+    accent: const Color(0xFF8B5CF6),
+    child: Column(
+      children: List.generate(
+        insights.length,
+        (index) {
+          final item =
+              Map<String, dynamic>.from(
+            insights[index] as Map,
+          );
+
+          final text =
+              (item['text'] ?? '').toString();
+
+          final icon =
+              (item['icon'] ?? '📊').toString();
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: AppUi.cardDecoration(
+              color: AppColors.bg,
+              radius: 18,
+              borderColor:
+                  AppColors.stroke.withOpacity(0.7),
+              shadows: const [],
+            ),
+            child: Row(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Text(
+                  icon,
+                  style: const TextStyle(fontSize: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+  ),
+
+  const SizedBox(height: 16),
+],
+
                           const SizedBox(height: 16),
 
                           AppUi.sectionCard(
@@ -832,10 +901,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 AppUi.progressBlock(
-                                  title: 'План выручки',
-                                  currentLabel: _formatMoney(revenue),
-                                  totalLabel: _formatMoney(revenuePlan),
-                                  progress: revenueProgress,
+                                  title: 'План прибыли общий',
+                                  currentLabel: _formatMoney(myNet + alexNet),
+                                  totalLabel: _formatMoney(stasPlan + alexPlan),
+                                  progress: (stasPlan + alexPlan) == 0
+                                      ? 0.0
+                                      : ((myNet + alexNet) / (stasPlan + alexPlan))
+                                          .clamp(0.0, 1.0),
                                   accentColors: const [
                                     Color(0xFF4DA3FF),
                                     Color(0xFF2D7DFF),
