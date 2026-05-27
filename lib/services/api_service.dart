@@ -183,6 +183,7 @@ static Future<void> deleteSaleByBatch(String batchId) async {
     required String type,
     required String comment,
     required String channel,
+    required String date,
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/expenses'),
@@ -193,6 +194,7 @@ static Future<void> deleteSaleByBatch(String batchId) async {
         'type': type,
         'comment': comment,
         'channel': channel,
+        'date': date,
       }),
     );
 

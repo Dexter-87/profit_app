@@ -1330,7 +1330,7 @@ app.get('/expenses', async (req, res) => {
 
 app.post('/expenses', async (req, res) => {
   try {
-    const { amount, owner, type, comment, channel } = req.body;
+    const { amount, owner, type, comment, channel, date } = req.body;
     const expenseChannel = channel || 'Общие';
 
     const sheetsApi = await getSheetsApi();
@@ -1342,7 +1342,7 @@ app.post('/expenses', async (req, res) => {
       insertDataOption: 'INSERT_ROWS',
       requestBody: {
         values: [[
-          todayRu(),
+          date || todayRu(),
           type || '',
           amount || '',
           expenseChannel,

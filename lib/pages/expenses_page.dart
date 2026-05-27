@@ -30,6 +30,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
   String _selectedPeriod = '30 дней';
   DateTime? _dateFrom;
   DateTime? _dateTo;
+  DateTime _expenseDate = DateTime.now();
 
   List<Map<String, dynamic>> _expenses = [];
   bool _loadingExpenses = true;
@@ -234,6 +235,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
           type: _selectedType,
           comment: comment,
           channel: _selectedChannel,
+          date: _formatDisplayDate(_expenseDate),
         );
       }
 
@@ -616,6 +618,36 @@ Widget _channelChoice(String title) {
                     ),
                   ),
                 ),
+
+                AppUi.sectionCard(
+                  title: 'Дата расхода',
+                  icon: Icons.calendar_today,
+                  accent: _accentColors.first,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _expenseDate,
+                        firstDate: DateTime(2023),
+                        lastDate: DateTime(2100),
+                      );
+
+                      if (picked != null) {
+                        setState(() {
+                          _expenseDate = picked;
+                        });
+                      }
+                    },
+                    child: AppUi.dateBox(
+                      title: 'Дата',
+                      value: _formatDisplayDate(_expenseDate),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
                 const SizedBox(height: 16),
                 AppUi.sectionCard(
                   title: 'Период отчёта',
