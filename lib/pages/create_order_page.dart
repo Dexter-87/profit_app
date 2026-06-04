@@ -8,6 +8,8 @@ import 'package:my_app/widgets/app_ui.dart';
 import 'package:my_app/widgets/gradient_button.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:excel/excel.dart';
 
 class CreateOrderPage extends StatefulWidget {
   const CreateOrderPage({super.key});
@@ -471,6 +473,124 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         _showMessage('Ошибка PDF: $e');
       }
     }
+
+Future<void> _importKaspiReport() async {
+  try {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx'],
+    );
+
+    if (result == null) return;
+
+    final path = result.files.single.path;
+
+    if (path == null) {
+      _showMessage('Не удалось открыть файл');
+      return;
+    }
+
+    final bytes = File(path).readAsBytesSync();
+    final excelFile = Excel.decodeBytes(bytes);
+
+    final List<Map<String, dynamic>> importedItems = [];
+
+    for (final table in excelFile.tables.values) {
+      for (final row in table.rows) {
+        final cells = row.map((cell) {
+          return cell?.value?.toString().trim() ?? '';
+        }).toList();
+
+        final joined = cells.join(' ').toLowerCase();
+
+        final hasOrderNumber = cells.any((x) => RegExp(r'^\d{8,12}$').hasMatch(x));
+        final hasKaspiCommission = joined.contains('комис');
+
+        if (!hasOrderNumber) continue;
+
+        final orderNumber = cells.firstWhere(
+          (x) => RegExp(r'^\d{8,12}$').hasMatch(x),
+          orElse: () => '',
+        );
+
+        String product = '';
+        String date = '';
+        double price = 0;
+        double commission = 0;
+
+        for (final cell in cells) {
+          if (RegExp(r'^\d{2}\.\d{2}\.\d{4}$').hasMatch(cell)) {
+            date = cell;
+          }
+
+          final number = _toDouble(cell);
+
+          if (number > 10000 && price == 0) {
+            price = number;
+          } else if (number > 0 && number < price && commission == 0) {
+            commission = number;
+          }
+
+          final lower = cell.toLowerCase();
+
+          if (
+            lower.contains('ariston') ||
+            lower.contains('thermex') ||
+            lower.contains('etalon') ||
+            lower.contains('edison') ||
+            lower.contains('edisson') ||
+            lower.contains('garanterm')
+          ) {
+            product = cell;
+          }
+        }
+
+        if (product.isEmpty || orderNumber.isEmpty || price <= 0) continue;
+
+        importedItems.add({
+          'name': product,
+          'quantity': 1,
+          'cost': 0,
+          'price': price,
+          'commission': commission,
+          'comment': '',
+          'channel': 'Каспий',
+          'client': 'Kaspi',
+          'orderNumber': orderNumber,
+          'date': date,
+        });
+      }
+    }
+
+    if (importedItems.isEmpty) {
+      _showMessage('В файле не найдены продажи Kaspi');
+      return;
+    }
+
+    _showMessage('Найдено продаж: ${importedItems.length}');
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/import-kaspi'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'items': importedItems,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final added = data['added'] ?? 0;
+      final skipped = data['skipped'] ?? 0;
+
+      _showMessage('Импорт готов: добавлено $added, дублей $skipped');
+      _loadClients();
+    } else {
+      _showMessage('Ошибка импорта: ${response.body}');
+    }
+  } catch (e) {
+    _showMessage('Ошибка импорта: $e');
+  }
+}
 
     void _showMessage(String text) {
       if (!mounted) return;
@@ -1177,29 +1297,39 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         Widget _actionButtons() {
           return Column(
             children: [
+              if (_selectedChannel == 'Каспий') ...[
+                GradientButton(
+                  text: 'Импорт Kaspi',
+                  onTap: _importKaspiReport,
+                ),
+                const SizedBox(height: 10),
+              ],
+
               GradientButton(
-                text: _isSaving ? 'Сохраняю...' : 'Сохранить продажу',
+                text: _isSaving ? 'Сохраняю.' : 'Сохранить продажу',
                 onTap: () {
                   if (!_isSaving) {
                     _saveOrder();
                   }
                 },
               ),
+
               const SizedBox(height: 10),
+
               Row(
                 children: [
                   Expanded(
                     child: GradientButton(
-                             text: 'Excel',
-                             onTap: _saveInvoiceExcel,
-                           ),
+                      text: 'Excel',
+                      onTap: _saveInvoiceExcel,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: GradientButton(
-                             text: 'PDF',
-                             onTap: _saveInvoicePdf,
-                           ),
+                      text: 'PDF',
+                      onTap: _saveInvoicePdf,
+                    ),
                   ),
                 ],
               ),

@@ -1051,6 +1051,142 @@ app.get('/import-sales-to-supabase', async (req, res) => {
   }
 });
 
+app.post('/import-kaspi', async (req, res) => {
+  try {
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'Нет товаров для импорта' });
+    }
+
+    const { data: prices, error: pricesError } = await supabase
+      .from('prices')
+      .select('*');
+
+    if (pricesError) throw pricesError;
+
+    const orderNumbers = items
+      .map((item) => String(item.orderNumber || '').trim())
+      .filter(Boolean);
+
+    const { data: existingSales, error: existingError } = await supabase
+      .from('sales')
+      .select('order_number')
+      .in('order_number', orderNumbers);
+
+    if (existingError) throw existingError;
+
+    const existingOrders = new Set(
+      (existingSales || []).map((row) => String(row.order_number || '').trim())
+    );
+
+    const values = [];
+    const supabaseRows = [];
+    let skipped = 0;
+
+    for (const item of items) {
+      const orderNumber = String(item.orderNumber || '').trim();
+
+      if (!orderNumber || existingOrders.has(orderNumber)) {
+        skipped++;
+        continue;
+      }
+
+      const productName = cleanProductName(item.name || '');
+      const priceNumber = toNumber(item.price);
+      const commissionNumber = toNumber(item.commission);
+      const saleDate = item.date || todayRu();
+
+      const productLower = productName.toLowerCase();
+
+      const foundPrice = (prices || []).find((p) => {
+        const fullName = String(p.full_name || '').toLowerCase();
+        const model = String(p.model || '').toLowerCase();
+        const brand = String(p.brand || '').toLowerCase();
+
+        return (
+          fullName === productLower ||
+          productLower.includes(model) ||
+          productLower.includes(`${brand} ${model}`.trim())
+        );
+      });
+
+      const costNumber = foundPrice ? toNumber(foundPrice.cost) : 0;
+      const profit = priceNumber - costNumber - commissionNumber;
+      const batchId = `KASPI-${Date.now()}-${orderNumber}`;
+
+      values.push([
+        saleDate,
+        'Каспий',
+        productName,
+        orderNumber,
+        costNumber,
+        priceNumber,
+        commissionNumber,
+        profit,
+        '',
+        '',
+        '',
+        '',
+        '',
+        'Kaspi',
+        batchId,
+      ]);
+
+      supabaseRows.push({
+        date: saleDate,
+        channel: 'Каспий',
+        product: productName,
+        order_number: orderNumber,
+        cost: costNumber,
+        price: priceNumber,
+        commission: commissionNumber,
+        profit,
+        comment: '',
+        client: 'Kaspi',
+        batch_id: batchId,
+      });
+    }
+
+    if (values.length > 0) {
+      const sheetsApi = await getSheetsApi();
+
+      const current = await sheetsApi.spreadsheets.values.get({
+        spreadsheetId: SALES_SPREADSHEET_ID,
+        range: 'Лист1!A:A',
+      });
+
+      const usedRows = current.data.values || [];
+      const nextRow = usedRows.length + 1;
+
+      await sheetsApi.spreadsheets.values.update({
+        spreadsheetId: SALES_SPREADSHEET_ID,
+        range: `Лист1!A${nextRow}:O${nextRow + values.length - 1}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values },
+      });
+
+      const { error: insertError } = await supabase
+        .from('sales')
+        .insert(supabaseRows);
+
+      if (insertError) throw insertError;
+    }
+
+    res.json({
+      ok: true,
+      added: values.length,
+      skipped,
+    });
+  } catch (error) {
+    console.error('Ошибка /import-kaspi:', error);
+    res.status(500).json({
+      error: 'Ошибка импорта Kaspi',
+      details: error.message,
+    });
+  }
+});
+
 app.post('/add-sale', async (req, res) => {
   try {
     const {
@@ -2849,7 +2985,7 @@ app.get('/business-report/pdf', async (req, res) => {
     y += 82;
 
     drawCard(doc, 36, y, 255, 'Стас итог с доп. доходами', money(data.myNetWithSideIncome || data.myNet || 0));
-    drawCard(doc, 302, y, 255, 'Алексей итог с доп. доходами', money(data.alexNetWithSideIncome || data.alexNet || 0));
+    drawCard(doc, 302, y, 255, 'Алексей итог с доп. доходами на пиво в Line Brew', money(data.alexNetWithSideIncome || data.alexNet || 0));
 
     y += 86;
 
