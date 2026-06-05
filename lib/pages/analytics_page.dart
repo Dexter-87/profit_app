@@ -463,6 +463,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final kaspiRevenue = _toDouble(_data['kaspiRevenue']);
     final kaspiProfit = _toDouble(_data['kaspiProfit']);
     final kaspiCount = (_data['kaspiCount'] ?? 0).toString();
+    final kaspiCommissions = _toDouble(_data['kaspiCommissions']);
+    final kaspiTotalVisibleExpenses =
+        _toDouble(_data['kaspiTotalVisibleExpenses']);
 
     final optRevenue = _toDouble(_data['optRevenue']);
     final optProfit = _toDouble(_data['optProfit']);
@@ -886,6 +889,27 @@ if (insights.isNotEmpty) ...[
                                       Color(0xFFD97706),
                                     ],
                                   ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          AppUi.sectionCard(
+                            title: 'Расходы Каспий',
+                            icon: Icons.account_balance_wallet_outlined,
+                            accent: const Color(0xFF06B6D4),
+                            child: Column(
+                              children: [
+                                _statRow(
+                                  'Удержания Kaspi',
+                                  _formatMoney(kaspiCommissions),
+                                ),
+                                _statRow(
+                                  'Всего расходов канала',
+                                  _formatMoney(kaspiTotalVisibleExpenses),
+                                  bold: true,
                                 ),
                               ],
                             ),
