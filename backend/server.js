@@ -2725,6 +2725,10 @@ app.get('/expenses-report/pdf', async (req, res) => {
     drawCard(doc, 302, y, 122, 'Алексей', money(alex));
     drawCard(doc, 435, y, 122, 'Общие', money(common));
 
+    const analyticsData = await calculateAnalytics(req, 10);
+    const kaspiDeductions = analyticsData.kaspiCommissions || 0;
+    const totalWithKaspiDeductions = total + kaspiDeductions;
+
     y += 82;
     y = drawSectionTitle(doc, 'Список расходов', y);
 
@@ -2774,6 +2778,15 @@ app.get('/expenses-report/pdf', async (req, res) => {
         width: PDF.width,
         align: 'right',
       });
+
+      y += 20;
+      y = drawSectionTitle(doc, 'Удержания Kaspi', y);
+
+      drawCard(doc, 36, y, 166, 'Комиссии / доставка', money(kaspiDeductions));
+      drawCard(doc, 214, y, 166, 'Ручные расходы', money(total));
+      drawCard(doc, 392, y, 166, 'Итого с Kaspi', money(totalWithKaspiDeductions));
+
+      y += 82;
 
     doc.end();
   } catch (error) {
@@ -2831,36 +2844,52 @@ app.get('/business-report/pdf', async (req, res) => {
     y = drawSectionTitle(doc, 'Каналы продаж', y);
 
     y = drawTableHeader(doc, y, [
-      { title: 'Канал', x: 46, w: 100 },
-      { title: 'Выручка', x: 180, w: 110, align: 'right' },
-      { title: 'Прибыль', x: 320, w: 110, align: 'right' },
-      { title: 'Продаж', x: 470, w: 70, align: 'right' },
+      { title: 'Канал', x: 46, w: 75 },
+      { title: 'Прибыль', x: 130, w: 85, align: 'right' },
+      { title: 'Удержания', x: 225, w: 85, align: 'right' },
+      { title: 'Расходы', x: 320, w: 75, align: 'right' },
+      { title: 'Всего расх.', x: 405, w: 75, align: 'right' },
+      { title: 'Чистая', x: 490, w: 55, align: 'right' },
     ]);
 
-    const channels = [
+    const expenseChannels = [
       {
         name: 'Каспий',
-        revenue: data.kaspiRevenue,
-        profit: data.kaspiProfit,
-        count: data.kaspiCount,
+        profit: data.kaspiProfit || 0,
+        deductions: data.kaspiCommissions || 0,
+        expenses: data.kaspiExpenses || 0,
+        totalVisible: data.kaspiTotalVisibleExpenses || 0,
+        net: data.kaspiNetProfit || 0,
       },
       {
         name: 'ОПТ',
-        revenue: data.optRevenue,
-        profit: data.optProfit,
-        count: data.optCount,
+        profit: data.optProfit || 0,
+        deductions: 0,
+        expenses: data.optExpenses || 0,
+        totalVisible: data.optExpenses || 0,
+        net: data.optNetProfit || 0,
+      },
+      {
+        name: 'Общие',
+        profit: 0,
+        deductions: 0,
+        expenses: data.commonExpenses || 0,
+        totalVisible: data.commonExpenses || 0,
+        net: -(data.commonExpenses || 0),
       },
     ];
 
-    channels.forEach((item, index) => {
+    expenseChannels.forEach((item, index) => {
       y = drawTableRow(
         doc,
         y,
         [
-          { value: item.name, x: 46, w: 100 },
-          { value: money(item.revenue), x: 180, w: 110, align: 'right' },
-          { value: money(item.profit), x: 320, w: 110, align: 'right' },
-          { value: item.count, x: 470, w: 70, align: 'right' },
+          { value: item.name, x: 46, w: 75 },
+          { value: money(item.profit), x: 130, w: 85, align: 'right' },
+          { value: money(item.deductions), x: 225, w: 85, align: 'right' },
+          { value: money(item.expenses), x: 320, w: 75, align: 'right' },
+          { value: money(item.totalVisible), x: 405, w: 75, align: 'right' },
+          { value: money(item.net), x: 490, w: 55, align: 'right' },
         ],
         index
       );
@@ -2876,26 +2905,6 @@ app.get('/business-report/pdf', async (req, res) => {
       { title: 'Чистая прибыль', x: 430, w: 115, align: 'right' },
     ]);
 
-    const expenseChannels = [
-      {
-        name: 'Каспий',
-        profit: data.kaspiProfit || 0,
-        expenses: data.kaspiExpenses || 0,
-        net: data.kaspiNetProfit || 0,
-      },
-      {
-        name: 'ОПТ',
-        profit: data.optProfit || 0,
-        expenses: data.optExpenses || 0,
-        net: data.optNetProfit || 0,
-      },
-      {
-        name: 'Общие',
-        profit: 0,
-        expenses: data.commonExpenses || 0,
-        net: -(data.commonExpenses || 0),
-      },
-    ];
 
     expenseChannels.forEach((item, index) => {
       y = drawTableRow(
