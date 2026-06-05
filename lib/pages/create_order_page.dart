@@ -475,156 +475,133 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     }
 
 Future<void> _importKaspiReport() async {
-  try {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx'],
-    );
+   try {
+     final result = await FilePicker.platform.pickFiles(
+       type: FileType.custom,
+       allowedExtensions: ['xlsx'],
+     );
 
-    if (result == null) return;
+     if (result == null) return;
 
-    final path = result.files.single.path;
+     final path = result.files.single.path;
 
-    if (path == null) {
-      _showMessage('Не удалось открыть файл');
-      return;
-    }
+     if (path == null) {
+       _showMessage('Не удалось открыть файл');
+       return;
+     }
 
-    final bytes = File(path).readAsBytesSync();
-    final excelFile = excel.Excel.decodeBytes(bytes);
+     final bytes = File(path).readAsBytesSync();
+     final excelFile = excel.Excel.decodeBytes(bytes);
 
-    final List<Map<String, dynamic>> importedItems = [];
+     final List<Map<String, dynamic>> importedItems = [];
 
-    final commissionHeaders = [
-      'комиссия за операции (т)',
-      'комиссия за операции по карте (т)',
-      'комиссия за обеспечение платежа (т)',
-      'комиссия kaspi pay (т)',
-      'комиссия kaspi travel (т)',
-      'оплата услуг за акцию бонусы от продавца',
-      'оплата услуг за акцию бонусы за отзыв',
-      'стоимость услуги за kaspi доставку',
-    ];
+     for (final table in excelFile.tables.values) {
+       List<String> headers = [];
 
-    for (final table in excelFile.tables.values) {
-      List<String> headers = [];
+       for (final row in table.rows) {
+         final cells = row.map((cell) {
+           return cell?.value?.toString().trim() ?? '';
+         }).toList();
 
-      for (final row in table.rows) {
-        final cells = row.map((cell) {
-          return cell?.value?.toString().trim() ?? '';
-        }).toList();
+         final lowerCells = cells.map((x) => x.toLowerCase().trim()).toList();
+         final joined = lowerCells.join(' ');
 
-        final lowerCells = cells.map((x) => x.toLowerCase().trim()).toList();
-        final joined = lowerCells.join(' ');
+         if (joined.contains('номер заказа') &&
+             joined.contains('детали покупки') &&
+             joined.contains('сумма операции')) {
+           headers = lowerCells;
+           continue;
+         }
 
-        if (joined.contains('номер заказа') &&
-            joined.contains('наименование') &&
-            joined.contains('комиссия')) {
-          headers = lowerCells;
-          continue;
-        }
+         if (headers.isEmpty) continue;
 
-        if (headers.isEmpty) continue;
+         String getByHeaderContains(String name) {
+           final index = headers.indexWhere((h) => h.contains(name.toLowerCase()));
+           if (index >= 0 && index < cells.length) {
+             return cells[index];
+           }
+           return '';
+         }
 
-        String getByHeader(List<String> names) {
-          for (final name in names) {
-            final index = headers.indexWhere((h) => h == name.toLowerCase());
-            if (index >= 0 && index < cells.length) {
-              return cells[index];
-            }
-          }
-          return '';
-        }
+         double sumByHeaderContains(List<String> names) {
+           double total = 0;
 
-        double sumByHeaders(List<String> names) {
-          double total = 0;
+           for (final name in names) {
+             final index = headers.indexWhere((h) => h.contains(name.toLowerCase()));
+             if (index >= 0 && index < cells.length) {
+               total += _toDouble(cells[index]).abs();
+             }
+           }
 
-          for (final name in names) {
-            final index = headers.indexWhere((h) => h == name.toLowerCase());
-            if (index >= 0 && index < cells.length) {
-              total += _toDouble(cells[index]).abs();
-            }
-          }
+           return total;
+         }
 
-          return total;
-        }
+         final orderNumber = getByHeaderContains('номер заказа')
+             .replaceAll(RegExp(r'\D'), '');
 
-        final orderNumber = getByHeader([
-          'номер заказа',
-          '№ заказа',
-          'заказ',
-        ]);
+         if (!RegExp(r'^\d{8,12}$').hasMatch(orderNumber)) continue;
 
-        if (!RegExp(r'^\d{8,12}$').hasMatch(orderNumber)) continue;
+         final product = getByHeaderContains('детали покупки');
 
-        final product = getByHeader([
-          'наименование',
-          'товар',
-          'наименование товара',
-        ]);
+         final date = getByHeaderContains('дата операции');
 
-        final date = getByHeader([
-          'дата продажи',
-          'дата',
-          'дата заказа',
-        ]);
+         final price = _toDouble(getByHeaderContains('сумма операции'));
 
-        final price = _toDouble(getByHeader([
-          'сумма',
-          'сумма продажи',
-          'стоимость товара',
-          'цена продажи',
-          'цена',
-        ]));
+         final commission = sumByHeaderContains([
+           'комиссия за операции (т)',
+           'комиссия за операции по карте',
+           'комиссия за обеспечение платежа',
+           'комиссия kaspi pay',
+           'комиссия kaspi travel',
+           'стоимость услуги за kaspi доставку',
+         ]);
 
-        final commission = sumByHeaders(commissionHeaders);
+         if (product.isEmpty || price <= 0) continue;
 
-        if (product.isEmpty || price <= 0) continue;
+         importedItems.add({
+           'name': product,
+           'quantity': 1,
+           'costPrice': 0,
+           'salePrice': price,
+           'commission': commission,
+           'comment': '',
+           'channel': 'Каспий',
+           'client': 'Kaspi',
+           'orderNumber': orderNumber,
+           'date': date,
+         });
+       }
+     }
 
-        importedItems.add({
-          'name': product,
-          'quantity': 1,
-          'cost': 0,
-          'price': price,
-          'commission': commission,
-          'comment': '',
-          'channel': 'Каспий',
-          'client': 'Kaspi',
-          'orderNumber': orderNumber,
-          'date': date,
-        });
-      }
-    }
+     if (importedItems.isEmpty) {
+       _showMessage('В файле не найдены продажи Kaspi');
+       return;
+     }
 
-    if (importedItems.isEmpty) {
-      _showMessage('В файле не найдены продажи Kaspi');
-      return;
-    }
+     _showMessage('Найдено продаж: ${importedItems.length}');
 
-    _showMessage('Найдено продаж: ${importedItems.length}');
+     final response = await http.post(
+       Uri.parse('$baseUrl/import-kaspi'),
+       headers: {'Content-Type': 'application/json'},
+       body: jsonEncode({
+         'items': importedItems,
+       }),
+     );
 
-    final response = await http.post(
-      Uri.parse('$baseUrl/import-kaspi'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'items': importedItems,
-      }),
-    );
+     if (response.statusCode == 200) {
+       final data = jsonDecode(response.body);
+       final added = data['added'] ?? 0;
+       final duplicates = data['duplicates'] ?? data['skipped'] ?? 0;
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final added = data['added'] ?? 0;
-      final skipped = data['skipped'] ?? 0;
-
-      _showMessage('Импорт готов: добавлено $added, дублей $skipped');
-      _loadClients();
-    } else {
-      _showMessage('Ошибка импорта: ${response.body}');
-    }
-  } catch (e) {
-    _showMessage('Ошибка импорта: $e');
-  }
-}
+       _showMessage('Импорт готов: добавлено $added, дублей $duplicates');
+       _loadClients();
+     } else {
+       _showMessage('Ошибка импорта: ${response.body}');
+     }
+   } catch (e) {
+     _showMessage('Ошибка импорта: $e');
+   }
+ }
 
     Widget _channelButton(String title) {
       final selected = _selectedChannel == title;
@@ -1394,4 +1371,15 @@ Future<void> _importKaspiReport() async {
               ),
             );
           }
+
+            void _showMessage(String message) {
+              if (!mounted) return;
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(message),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
         }

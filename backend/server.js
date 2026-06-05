@@ -1101,21 +1101,66 @@ app.post('/import-kaspi', async (req, res) => {
       });
     }
 
-    const rowsToInsert = newItems.map((item) => ({
-      date: item.date,
-      channel: 'Каспий',
-      product: item.name,
-      order_number: item.orderNumber,
-      cost: Number(item.costPrice || 0),
-      price: Number(item.salePrice || 0),
-      commission: Number(item.commission || 0),
-      profit:
-        Number(item.salePrice || 0) -
-        Number(item.costPrice || 0) -
-        Number(item.commission || 0),
-      comment: item.comment || '',
-      client: 'Kaspi',
-    }));
+    const { data: prices, error: pricesError } = await supabase
+      .from('prices')
+      .select('*');
+
+    if (pricesError) throw pricesError;
+
+    const normalizeText = (value) => {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[^\wа-яА-Я0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const findPriceItem = (productName) => {
+      const productNorm = normalizeText(productName);
+
+      return (prices || []).find((p) => {
+        const brand = normalizeText(p.brand);
+        const model = normalizeText(p.model);
+        const fullName = normalizeText(p.full_name || p.fullName);
+
+        const candidate = normalizeText(`${brand} ${model} ${fullName}`);
+
+        if (model && productNorm.includes(model)) return true;
+        if (fullName && productNorm.includes(fullName)) return true;
+        if (candidate && productNorm.includes(candidate)) return true;
+
+        return false;
+      });
+    };
+
+    const rowsToInsert = newItems.map((item) => {
+      const priceItem = findPriceItem(item.name);
+
+      const costPrice = Number(
+        priceItem?.cost ??
+        priceItem?.cost_price ??
+        priceItem?.costPrice ??
+        item.costPrice ??
+        0
+      );
+
+      const salePrice = Number(item.salePrice || 0);
+      const commission = Number(item.commission || 0);
+
+      return {
+        date: item.date,
+        channel: 'Каспий',
+        product: item.name,
+        order_number: item.orderNumber,
+        cost: costPrice,
+        price: salePrice,
+        commission,
+        profit: salePrice - costPrice - commission,
+        comment: item.comment || '',
+        client: 'Kaspi',
+      };
+    });
 
     const { error: insertError } = await supabase
       .from('sales')
