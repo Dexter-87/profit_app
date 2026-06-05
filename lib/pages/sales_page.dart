@@ -88,11 +88,14 @@ class _SalesPageState extends State<SalesPage> {
         .toString()
         .trim();
 
-    if (raw.isNotEmpty) return raw;
+    final client = (row['Клиент'] ?? row['client'] ?? '').toString().trim();
+
+    if (raw.isNotEmpty) {
+      return '$raw-$client';
+    }
 
     final rowIndex = (row['__index'] ?? '').toString();
     return 'ROW-$rowIndex';
-  }
 
   bool _isLegacyBatch(String batchId) => batchId.startsWith('ROW-');
 
