@@ -1340,111 +1340,49 @@ app.post('/delete-sale', async (req, res) => {
   try {
     const { rowIndex, batchId } = req.body;
 
-    if (!rowIndex && !batchId) {
+    const id = Number(rowIndex);
+    const cleanBatchId = String(batchId || '').trim();
+
+    if (!id && !cleanBatchId) {
       return res.status(400).json({ error: 'Нет rowIndex или batchId' });
     }
 
-    const sheetsApi = await getSheetsApi();
+    let deletedFromSupabase = 0;
 
-    const rows = await getRowsFromSpreadsheet(
-      SALES_SPREADSHEET_ID,
-      SALES_RANGE
-    );
-
-    let indexesToDelete = [];
-
-    if (batchId && !String(batchId).startsWith('ROW-')) {
-      indexesToDelete = rows
-        .filter((row) => {
-          const sheetBatchId = getCell(
-            row,
-            ['batchId', 'BatchId', 'BATCHID', 'Накладная'],
-            14
-          );
-
-          return String(sheetBatchId).trim() === String(batchId).trim();
-        })
-        .map((row) => Number(row.__index))
-        .filter((index) => index > 1);
-    } else if (rowIndex) {
-      indexesToDelete = [Number(rowIndex)];
-    }
-
-    indexesToDelete = [...new Set(indexesToDelete)]
-      .filter((index) => index > 1)
-      .sort((a, b) => b - a);
-
-    if (indexesToDelete.length === 0) {
-      return res.status(404).json({
-        error: 'Строки для удаления не найдены',
-        batchId,
-        rowIndex,
-      });
-    }
-
-    if (batchId && !String(batchId).startsWith('ROW-')) {
-      const cleanBatchId = String(batchId).trim();
-
-      console.log('DELETE SALE BODY:', req.body);
-      console.log('DELETE BATCH ID:', cleanBatchId);
-
-      const { data: deletedRows, error: supabaseError } = await supabase
+    if (cleanBatchId && !cleanBatchId.startsWith('ROW-')) {
+      const { data, error } = await supabase
         .from('sales')
         .delete()
         .eq('batch_id', cleanBatchId)
         .select();
 
-      if (supabaseError) throw supabaseError;
+      if (error) throw error;
+      deletedFromSupabase = data?.length || 0;
+    } else if (id) {
+      const { data, error } = await supabase
+        .from('sales')
+        .delete()
+        .eq('id', id)
+        .select();
 
-      console.log('DELETED FROM SUPABASE:', deletedRows?.length || 0);
-    } else if (rowIndex) {
-      const row = rows.find(
-        (r) => Number(r.__index) === Number(rowIndex)
-      );
-
-      const singleBatchId = getCell(
-        row,
-        ['batchId', 'BatchId', 'BATCHID', 'Накладная'],
-        14
-      );
-
-      if (singleBatchId) {
-        const { error: supabaseError } = await supabase
-          .from('sales')
-          .delete()
-          .eq('batch_id', String(singleBatchId));
-
-        if (supabaseError) throw supabaseError;
-      }
+      if (error) throw error;
+      deletedFromSupabase = data?.length || 0;
     }
 
-    const meta = await sheetsApi.spreadsheets.get({
-      spreadsheetId: SALES_SPREADSHEET_ID,
+    res.json({
+      ok: true,
+      deleted: deletedFromSupabase,
+      batchId: cleanBatchId,
+      rowIndex: id || '',
     });
-
-    const sheet = meta.data.sheets.find((s) => s.properties.title === 'Лист1');
-
-    if (!sheet) {
-      return res.status(400).json({ error: 'Лист1 не найден' });
-    }
-
-    const sheetId = sheet.properties.sheetId;
-
-    await sheetsApi.spreadsheets.batchUpdate({
-      spreadsheetId: SALES_SPREADSHEET_ID,
-      requestBody: {
-        requests: indexesToDelete.map((index) => ({
-          deleteDimension: {
-            range: {
-              sheetId,
-              dimension: 'ROWS',
-              startIndex: index - 1,
-              endIndex: index,
-            },
-          },
-        })),
-      },
+  } catch (error) {
+    console.error('Ошибка /delete-sale:', error);
+    res.status(500).json({
+      error: 'Ошибка удаления продажи',
+      details: error.message,
     });
+  }
+});
 
     res.json({
       ok: true,
