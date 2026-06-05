@@ -1119,19 +1119,44 @@ app.post('/import-kaspi', async (req, res) => {
     const findPriceItem = (productName) => {
       const productNorm = normalizeText(productName);
 
-      return (prices || []).find((p) => {
-        const brand = normalizeText(p.brand);
-        const model = normalizeText(p.model);
-        const fullName = normalizeText(p.full_name || p.fullName);
+      const ignoreWords = [
+        'водонагреватель',
+        'накопительный',
+        'белый',
+        'белая',
+      ];
 
-        const candidate = normalizeText(`${brand} ${model} ${fullName}`);
+      const productWords = productNorm
+        .split(' ')
+        .filter((w) => w.length >= 2 && !ignoreWords.includes(w));
 
-        if (model && productNorm.includes(model)) return true;
-        if (fullName && productNorm.includes(fullName)) return true;
-        if (candidate && productNorm.includes(candidate)) return true;
+      let best = null;
+      let bestScore = 0;
 
-        return false;
-      });
+      for (const p of prices || []) {
+        const candidateNorm = normalizeText(
+          `${p.brand || ''} ${p.model || ''} ${p.full_name || p.fullName || ''}`
+        );
+
+        const candidateWords = candidateNorm
+          .split(' ')
+          .filter((w) => w.length >= 2);
+
+        let score = 0;
+
+        for (const word of productWords) {
+          if (candidateWords.includes(word)) {
+            score += 1;
+          }
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = p;
+        }
+      }
+
+      return bestScore >= 4 ? best : null;
     };
 
     const rowsToInsert = newItems.map((item) => {

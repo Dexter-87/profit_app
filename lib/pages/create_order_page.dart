@@ -556,15 +556,30 @@ Future<void> _importKaspiReport() async {
 
          final price = _toDouble(priceRaw);
 
-         final commission = sumByHeaderContains([
-           'комиссия за операции (т)',
-           'комиссия за операции по карте',
-           'комиссия за обеспечение платежа',
-           'комиссия kaspi pay',
-           'комиссия kaspi travel',
-           'стоимость услуг kaspi',
-           'стоимость услуги за kaspi доставку',
-         ]);
+         double sumKaspiCommissions() {
+           double total = 0;
+
+           for (int i = 0; i < headers.length && i < cells.length; i++) {
+             final h = headers[i].toLowerCase();
+
+             final isKaspiExpense =
+                 h.contains('комиссия') ||
+                 h.contains('стоимость услуг') ||
+                 h.contains('стоимость услуги');
+
+             final isWithoutVat =
+                 h.contains('без ндс') ||
+                 h.contains('без ндс');
+
+             if (isKaspiExpense && !isWithoutVat) {
+               total += _toDouble(cells[i]).abs();
+             }
+           }
+
+           return total;
+         }
+
+         final commission = sumKaspiCommissions();
 
          if (product.isEmpty || price <= 0) continue;
 
