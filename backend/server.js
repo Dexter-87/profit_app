@@ -1111,6 +1111,7 @@ app.post('/import-kaspi', async (req, res) => {
       return String(value || '')
         .toLowerCase()
         .replace(/ё/g, 'е')
+        .replace(/edisson/g, 'edison')
         .replace(/[^\wа-яА-Я0-9]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -1156,7 +1157,7 @@ app.post('/import-kaspi', async (req, res) => {
         }
       }
 
-      return bestScore >= 4 ? best : null;
+      return bestScore >= 3 ? best : null;
     };
 
     const rowsToInsert = newItems.map((item) => {
