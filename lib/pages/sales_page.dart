@@ -96,6 +96,7 @@ class _SalesPageState extends State<SalesPage> {
 
     final rowIndex = (row['__index'] ?? '').toString();
     return 'ROW-$rowIndex';
+    }
 
   bool _isLegacyBatch(String batchId) => batchId.startsWith('ROW-');
 
