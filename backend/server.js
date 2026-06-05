@@ -1059,15 +1059,20 @@ app.post('/import-kaspi', async (req, res) => {
       return res.status(400).json({ error: 'Нет товаров для импорта' });
     }
 
-    const { data: prices, error: pricesError } = await supabase
-      .from('prices')
-      .select('*');
+    const normalizeOrderNumber = (value) => {
+      return String(value || '')
+        .replace(/\D/g, '')
+        .trim();
+    };
 
-    if (pricesError) throw pricesError;
+    const preparedItems = items
+      .map((item) => ({
+        ...item,
+        orderNumber: normalizeOrderNumber(item.orderNumber || item.order_number),
+      }))
+      .filter((item) => item.orderNumber);
 
-    const orderNumbers = items
-      .map((item) => String(item.orderNumber || '').trim())
-      .filter(Boolean);
+    const orderNumbers = preparedItems.map((item) => item.orderNumber);
 
     const { data: existingSales, error: existingError } = await supabase
       .from('sales')
@@ -1076,107 +1081,65 @@ app.post('/import-kaspi', async (req, res) => {
 
     if (existingError) throw existingError;
 
-    const existingOrders = new Set(
-      (existingSales || []).map((row) => String(row.order_number || '').trim())
+    const existingOrderNumbers = new Set(
+      (existingSales || []).map((sale) => normalizeOrderNumber(sale.order_number))
     );
 
-    const values = [];
-    const supabaseRows = [];
-    let skipped = 0;
+    const duplicates = preparedItems.filter((item) =>
+      existingOrderNumbers.has(item.orderNumber)
+    );
 
-    for (const item of items) {
-      const orderNumber = String(item.orderNumber || '').trim();
+    const newItems = preparedItems.filter((item) =>
+      !existingOrderNumbers.has(item.orderNumber)
+    );
 
-      if (!orderNumber || existingOrders.has(orderNumber)) {
-        skipped++;
-        continue;
-      }
-
-      const productName = cleanProductName(item.name || '');
-      const priceNumber = toNumber(item.price);
-      const commissionNumber = toNumber(item.commission);
-      const saleDate = item.date || todayRu();
-
-      const productLower = productName.toLowerCase();
-
-      const foundPrice = (prices || []).find((p) => {
-        const fullName = String(p.full_name || '').toLowerCase();
-        const model = String(p.model || '').toLowerCase();
-        const brand = String(p.brand || '').toLowerCase();
-
-        return (
-          fullName === productLower ||
-          productLower.includes(model) ||
-          productLower.includes(`${brand} ${model}`.trim())
-        );
-      });
-
-      const costNumber = foundPrice ? toNumber(foundPrice.cost) : 0;
-      const profit = priceNumber - costNumber - commissionNumber;
-      const batchId = `KASPI-${Date.now()}-${orderNumber}`;
-
-      values.push([
-        saleDate,
-        'Каспий',
-        productName,
-        orderNumber,
-        costNumber,
-        priceNumber,
-        commissionNumber,
-        profit,
-        '',
-        '',
-        '',
-        '',
-        '',
-        'Kaspi',
-        batchId,
-      ]);
-
-      supabaseRows.push({
-        date: saleDate,
-        channel: 'Каспий',
-        product: productName,
-        order_number: orderNumber,
-        cost: costNumber,
-        price: priceNumber,
-        commission: commissionNumber,
-        profit,
-        comment: '',
-        client: 'Kaspi',
-        batch_id: batchId,
+    if (newItems.length === 0) {
+      return res.json({
+        added: 0,
+        duplicates: duplicates.length,
+        message: `Все позиции уже есть. Дублей: ${duplicates.length}`,
       });
     }
 
-    if (values.length > 0) {
-      const sheetsApi = await getSheetsApi();
+    const rowsToInsert = newItems.map((item) => ({
+      date: item.date,
+      channel: 'Каспий',
+      product: item.name,
+      order_number: item.orderNumber,
+      cost: Number(item.costPrice || 0),
+      price: Number(item.salePrice || 0),
+      commission: Number(item.commission || 0),
+      profit:
+        Number(item.salePrice || 0) -
+        Number(item.costPrice || 0) -
+        Number(item.commission || 0),
+      comment: item.comment || '',
+      client: 'Kaspi',
+    }));
 
-      const current = await sheetsApi.spreadsheets.values.get({
-        spreadsheetId: SALES_SPREADSHEET_ID,
-        range: 'Лист1!A:A',
-      });
+    const { error: insertError } = await supabase
+      .from('sales')
+      .insert(rowsToInsert);
 
-      const usedRows = current.data.values || [];
-      const nextRow = usedRows.length + 1;
+    if (insertError) {
+      if (
+        insertError.code === '23505' ||
+        insertError.message?.includes('sales_order_number_unique')
+      ) {
+        return res.json({
+          added: 0,
+          duplicates: rowsToInsert.length,
+          message: `Обнаружены дубли заказов: ${rowsToInsert.length}`,
+        });
+      }
 
-      await sheetsApi.spreadsheets.values.update({
-        spreadsheetId: SALES_SPREADSHEET_ID,
-        range: `Лист1!A${nextRow}:O${nextRow + values.length - 1}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values },
-      });
-
-      const { error: insertError } = await supabase
-        .from('sales')
-        .insert(supabaseRows);
-
-      if (insertError) throw insertError;
+      throw insertError;
     }
 
     res.json({
-      ok: true,
-      added: values.length,
-      skipped,
+      added: newItems.length,
+      duplicates: duplicates.length,
+      message: `Добавлено: ${newItems.length}, дублей: ${duplicates.length}`,
     });
   } catch (error) {
     console.error('Ошибка /import-kaspi:', error);
