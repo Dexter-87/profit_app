@@ -9,7 +9,7 @@ import 'package:my_app/widgets/gradient_button.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart';
+import 'package:excel/excel.dart' as excel;
 
 class CreateOrderPage extends StatefulWidget {
   const CreateOrderPage({super.key});
@@ -491,61 +491,95 @@ Future<void> _importKaspiReport() async {
     }
 
     final bytes = File(path).readAsBytesSync();
-    final excelFile = Excel.decodeBytes(bytes);
+    final excelFile = excel.Excel.decodeBytes(bytes);
 
     final List<Map<String, dynamic>> importedItems = [];
 
+    final commissionHeaders = [
+      'комиссия за операции (т)',
+      'комиссия за операции по карте (т)',
+      'комиссия за обеспечение платежа (т)',
+      'комиссия kaspi pay (т)',
+      'комиссия kaspi travel (т)',
+      'оплата услуг за акцию бонусы от продавца',
+      'оплата услуг за акцию бонусы за отзыв',
+      'стоимость услуги за kaspi доставку',
+    ];
+
     for (final table in excelFile.tables.values) {
+      List<String> headers = [];
+
       for (final row in table.rows) {
         final cells = row.map((cell) {
           return cell?.value?.toString().trim() ?? '';
         }).toList();
 
-        final joined = cells.join(' ').toLowerCase();
+        final lowerCells = cells.map((x) => x.toLowerCase().trim()).toList();
+        final joined = lowerCells.join(' ');
 
-        final hasOrderNumber = cells.any((x) => RegExp(r'^\d{8,12}$').hasMatch(x));
-        final hasKaspiCommission = joined.contains('комис');
-
-        if (!hasOrderNumber) continue;
-
-        final orderNumber = cells.firstWhere(
-          (x) => RegExp(r'^\d{8,12}$').hasMatch(x),
-          orElse: () => '',
-        );
-
-        String product = '';
-        String date = '';
-        double price = 0;
-        double commission = 0;
-
-        for (final cell in cells) {
-          if (RegExp(r'^\d{2}\.\d{2}\.\d{4}$').hasMatch(cell)) {
-            date = cell;
-          }
-
-          final number = _toDouble(cell);
-
-          if (number > 10000 && price == 0) {
-            price = number;
-          } else if (number > 0 && number < price && commission == 0) {
-            commission = number;
-          }
-
-          final lower = cell.toLowerCase();
-
-          if (
-            lower.contains('ariston') ||
-            lower.contains('thermex') ||
-            lower.contains('etalon') ||
-            lower.contains('edison') ||
-            lower.contains('edisson') ||
-            lower.contains('garanterm')
-          ) {
-            product = cell;
-          }
+        if (joined.contains('номер заказа') &&
+            joined.contains('наименование') &&
+            joined.contains('комиссия')) {
+          headers = lowerCells;
+          continue;
         }
 
-        if (product.isEmpty || orderNumber.isEmpty || price <= 0) continue;
+        if (headers.isEmpty) continue;
+
+        String getByHeader(List<String> names) {
+          for (final name in names) {
+            final index = headers.indexWhere((h) => h == name.toLowerCase());
+            if (index >= 0 && index < cells.length) {
+              return cells[index];
+            }
+          }
+          return '';
+        }
+
+        double sumByHeaders(List<String> names) {
+          double total = 0;
+
+          for (final name in names) {
+            final index = headers.indexWhere((h) => h == name.toLowerCase());
+            if (index >= 0 && index < cells.length) {
+              total += _toDouble(cells[index]).abs();
+            }
+          }
+
+          return total;
+        }
+
+        final orderNumber = getByHeader([
+          'номер заказа',
+          '№ заказа',
+          'заказ',
+        ]);
+
+        if (!RegExp(r'^\d{8,12}$').hasMatch(orderNumber)) continue;
+
+        final product = getByHeader([
+          'наименование',
+          'товар',
+          'наименование товара',
+        ]);
+
+        final date = getByHeader([
+          'дата продажи',
+          'дата',
+          'дата заказа',
+        ]);
+
+        final price = _toDouble(getByHeader([
+          'сумма',
+          'сумма продажи',
+          'стоимость товара',
+          'цена продажи',
+          'цена',
+        ]));
+
+        final commission = sumByHeaders(commissionHeaders);
+
+        if (product.isEmpty || price <= 0) continue;
 
         importedItems.add({
           'name': product,
@@ -591,13 +625,6 @@ Future<void> _importKaspiReport() async {
     _showMessage('Ошибка импорта: $e');
   }
 }
-
-    void _showMessage(String text) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(text)),
-      );
-    }
 
     Widget _channelButton(String title) {
       final selected = _selectedChannel == title;
