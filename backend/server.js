@@ -2896,31 +2896,6 @@ app.get('/business-report/pdf', async (req, res) => {
     });
 
     y += 20;
-    y = drawSectionTitle(doc, 'Расходы по каналам', y);
-
-    y = drawTableHeader(doc, y, [
-      { title: 'Канал', x: 46, w: 100 },
-      { title: 'Прибыль до расходов', x: 170, w: 120, align: 'right' },
-      { title: 'Расходы', x: 310, w: 100, align: 'right' },
-      { title: 'Чистая прибыль', x: 430, w: 115, align: 'right' },
-    ]);
-
-
-    expenseChannels.forEach((item, index) => {
-      y = drawTableRow(
-        doc,
-        y,
-        [
-          { value: item.name, x: 46, w: 100 },
-          { value: money(item.profit), x: 170, w: 120, align: 'right' },
-          { value: money(item.expenses), x: 310, w: 100, align: 'right' },
-          { value: money(item.net), x: 430, w: 115, align: 'right' },
-        ],
-        index
-      );
-    });
-
-    y += 20;
     y = drawSectionTitle(doc, 'Доп. доходы 50/50', y);
 
     drawCard(doc, 36, y, 122, 'Доход', money(data.sideIncomeTotal || 0));
