@@ -506,9 +506,9 @@ Future<void> _importKaspiReport() async {
          final lowerCells = cells.map((x) => x.toLowerCase().trim()).toList();
          final joined = lowerCells.join(' ');
 
-         if (joined.contains('номер заказа') &&
+         if ((joined.contains('номер заказа') || joined.contains('номер операции')) &&
              joined.contains('детали покупки') &&
-             joined.contains('сумма операции')) {
+             (joined.contains('сумма операции') || joined.contains('сумма'))) {
            headers = lowerCells;
            continue;
          }
@@ -536,8 +536,11 @@ Future<void> _importKaspiReport() async {
            return total;
          }
 
-         final orderNumber = getByHeaderContains('номер заказа')
-             .replaceAll(RegExp(r'\D'), '');
+         final orderNumberRaw = getByHeaderContains('номер заказа').isNotEmpty
+             ? getByHeaderContains('номер заказа')
+             : getByHeaderContains('номер операции');
+
+         final orderNumber = orderNumberRaw.replaceAll(RegExp(r'\D'), '');
 
          if (!RegExp(r'^\d{8,12}$').hasMatch(orderNumber)) continue;
 
