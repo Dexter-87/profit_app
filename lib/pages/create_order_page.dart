@@ -546,9 +546,15 @@ Future<void> _importKaspiReport() async {
 
          final product = getByHeaderContains('детали покупки');
 
-         final date = getByHeaderContains('дата операции');
+         final date = getByHeaderContains('дата операции').isNotEmpty
+             ? getByHeaderContains('дата операции')
+             : getByHeaderContains('дата');
 
-         final price = _toDouble(getByHeaderContains('сумма операции'));
+         final priceRaw = getByHeaderContains('сумма операции').isNotEmpty
+             ? getByHeaderContains('сумма операции')
+             : getByHeaderContains('сумма');
+
+         final price = _toDouble(priceRaw);
 
          final commission = sumByHeaderContains([
            'комиссия за операции (т)',
@@ -556,6 +562,7 @@ Future<void> _importKaspiReport() async {
            'комиссия за обеспечение платежа',
            'комиссия kaspi pay',
            'комиссия kaspi travel',
+           'стоимость услуг kaspi',
            'стоимость услуги за kaspi доставку',
          ]);
 
