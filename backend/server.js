@@ -1901,6 +1901,7 @@ async function calculateAnalytics(req, topLimit = 5) {
     if (channel === 'Каспий') {
       kaspiRevenue += rrc;
       kaspiProfit += profit;
+      kaspiCommissions += commission;
       kaspiCount++;
     } else {
       optRevenue += rrc;
@@ -2164,6 +2165,7 @@ for (const row of expenseRows) {
   }
 
   // Расходы Каспий / ОПТ
+  let kaspiCommissions = 0;
   let kaspiExpenses = 0;
   let optExpenses = 0;
   let commonExpenses = 0;
@@ -2253,6 +2255,10 @@ for (const row of expenseRows) {
     kaspiExpenses,
     optExpenses,
     commonExpenses,
+    kaspiCommissions,
+    kaspiTotalVisibleExpenses: kaspiExpenses + kaspiCommissions,
+    optTotalVisibleExpenses: optExpenses,
+    commonTotalVisibleExpenses: commonExpenses,
     kaspiNetProfit: kaspiProfit - kaspiExpenses,
     optNetProfit: optProfit - optExpenses,
     myNet,
