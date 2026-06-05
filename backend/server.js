@@ -1127,9 +1127,41 @@ app.post('/import-kaspi', async (req, res) => {
         'белая',
       ];
 
-      const productWords = productNorm
-        .split(' ')
-        .filter((w) => w.length >= 2 && !ignoreWords.includes(w));
+      const getWords = (text) =>
+        normalizeText(text)
+          .split(' ')
+          .filter(Boolean);
+
+      const productWords = getWords(productNorm);
+      const productSet = new Set(productWords);
+
+      const hasMismatch = (candidateSet) => {
+        if (productSet.has('slim') !== candidateSet.has('slim')) {
+          return true;
+        }
+
+        const groups = [
+          ['v', 'h'],
+          ['pro1', 'blu1'],
+          ['er', 'es', 'ess', 'ers'],
+          ['or', 'ur'],
+        ];
+
+        for (const group of groups) {
+          const productMarkers = group.filter((x) => productSet.has(x));
+          const candidateMarkers = group.filter((x) => candidateSet.has(x));
+
+          if (
+            productMarkers.length > 0 &&
+            candidateMarkers.length > 0 &&
+            !productMarkers.some((x) => candidateMarkers.includes(x))
+          ) {
+            return true;
+          }
+        }
+
+        return false;
+      };
 
       let best = null;
       let bestScore = 0;
@@ -1139,14 +1171,19 @@ app.post('/import-kaspi', async (req, res) => {
           `${p.brand || ''} ${p.model || ''} ${p.full_name || p.fullName || ''}`
         );
 
-        const candidateWords = candidateNorm
-          .split(' ')
-          .filter((w) => w.length >= 2);
+        const candidateWords = getWords(candidateNorm);
+        const candidateSet = new Set(candidateWords);
+
+        if (hasMismatch(candidateSet)) {
+          continue;
+        }
 
         let score = 0;
 
         for (const word of productWords) {
-          if (candidateWords.includes(word)) {
+          if (ignoreWords.includes(word)) continue;
+
+          if (candidateSet.has(word)) {
             score += 1;
           }
         }
