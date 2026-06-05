@@ -1384,21 +1384,6 @@ app.post('/delete-sale', async (req, res) => {
   }
 });
 
-    res.json({
-      ok: true,
-      deleted: indexesToDelete.length,
-      batchId: batchId || '',
-      rowIndex: rowIndex || '',
-    });
-  } catch (error) {
-    console.error('Ошибка /delete-sale:', error);
-    res.status(500).json({
-      error: 'Ошибка удаления продажи',
-      details: error.message,
-    });
-  }
-});
-
 // ================= РАСХОДЫ =================
 
 app.get('/expenses', async (req, res) => {
