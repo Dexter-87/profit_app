@@ -1848,6 +1848,10 @@ async function calculateAnalytics(req, topLimit = 5) {
   let kaspiRevenue = 0;
   let kaspiProfit = 0;
   let kaspiCount = 0;
+  let kaspiCommissions = 0;
+  let kaspiExpenses = 0;
+  let optExpenses = 0;
+  let commonExpenses = 0;
 
   let optRevenue = 0;
   let optProfit = 0;
@@ -2165,10 +2169,6 @@ for (const row of expenseRows) {
   }
 
   // Расходы Каспий / ОПТ
-  let kaspiCommissions = 0;
-  let kaspiExpenses = 0;
-  let optExpenses = 0;
-  let commonExpenses = 0;
 
   for (const row of expenseRows) {
     const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
