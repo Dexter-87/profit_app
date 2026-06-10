@@ -1411,6 +1411,23 @@ app.post('/delete-sale', async (req, res) => {
     }
 
     let deletedFromSupabase = 0;
+    let deletedFromSheet = 0;
+
+    const sheetsApi = await getSheetsApi();
+
+    const spreadsheet = await sheetsApi.spreadsheets.get({
+      spreadsheetId: SALES_SPREADSHEET_ID,
+    });
+
+    const sheet = spreadsheet.data.sheets.find(
+      (s) => s.properties.title === 'Лист1'
+    );
+
+    if (!sheet) {
+      return res.status(404).json({ error: 'Лист1 не найден' });
+    }
+
+    const sheetId = sheet.properties.sheetId;
 
     if (cleanBatchId && !cleanBatchId.startsWith('ROW-')) {
       const { data, error } = await supabase
@@ -1421,6 +1438,47 @@ app.post('/delete-sale', async (req, res) => {
 
       if (error) throw error;
       deletedFromSupabase = data?.length || 0;
+
+      const valuesResponse = await sheetsApi.spreadsheets.values.get({
+        spreadsheetId: SALES_SPREADSHEET_ID,
+        range: 'Лист1!A:O',
+      });
+
+      const rows = valuesResponse.data.values || [];
+
+      const rowsToDelete = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const rowBatchId = String(rows[i][14] || '').trim();
+
+        if (rowBatchId === cleanBatchId) {
+          rowsToDelete.push(i);
+        }
+      }
+
+      rowsToDelete.sort((a, b) => b - a);
+
+      for (const rowIndexToDelete of rowsToDelete) {
+        await sheetsApi.spreadsheets.batchUpdate({
+          spreadsheetId: SALES_SPREADSHEET_ID,
+          requestBody: {
+            requests: [
+              {
+                deleteDimension: {
+                  range: {
+                    sheetId,
+                    dimension: 'ROWS',
+                    startIndex: rowIndexToDelete,
+                    endIndex: rowIndexToDelete + 1,
+                  },
+                },
+              },
+            ],
+          },
+        });
+
+        deletedFromSheet++;
+      }
     } else if (id) {
       const { data, error } = await supabase
         .from('sales')
@@ -1430,11 +1488,16 @@ app.post('/delete-sale', async (req, res) => {
 
       if (error) throw error;
       deletedFromSupabase = data?.length || 0;
+
+      // Для старых строк ROW-id удаление из Google Sheet по id невозможно,
+      // потому что id Supabase не равен номеру строки Google Sheet.
+      // Их при необходимости лучше чистить вручную.
     }
 
     res.json({
       ok: true,
       deleted: deletedFromSupabase,
+      deletedFromSheet,
       batchId: cleanBatchId,
       rowIndex: id || '',
     });

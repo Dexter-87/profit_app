@@ -188,7 +188,15 @@ class _SalesPageState extends State<SalesPage> {
           await ApiService.deleteSale(rowIndex);
         }
       } else {
-        await ApiService.deleteSaleByBatch(batch);
+        final originalBatch = (rows.first['batchId'] ??
+                rows.first['BatchId'] ??
+                rows.first['BATCHID'] ??
+                rows.first['Накладная'] ??
+                '')
+            .toString()
+            .trim();
+
+        await ApiService.deleteSaleByBatch(originalBatch.isNotEmpty ? originalBatch : batch);
       }
 
       _showMessage(isLegacy ? 'Продажа удалена' : 'Накладная удалена');
