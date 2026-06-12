@@ -565,7 +565,9 @@ Future<void> _importKaspiReport() async {
              final isKaspiExpense =
                  h.contains('комиссия') ||
                  h.contains('стоимость услуг') ||
-                 h.contains('стоимость услуги');
+                 h.contains('стоимость услуги') ||
+                 h.contains('оплата услуг') ||
+                 h.contains('бонусы от продавца');
 
              final isWithoutVat =
                  h.contains('без ндс') ||
