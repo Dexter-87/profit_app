@@ -122,7 +122,12 @@ function parseDate(raw) {
     return new Date(Date.UTC(1899, 11, 30 + serial));
   }
 
-  if (value.includes('-')) {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    const [y, m, d] = value.slice(0, 10).split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [y, m, d] = value.split('-').map(Number);
     return new Date(y, m - 1, d);
   }
