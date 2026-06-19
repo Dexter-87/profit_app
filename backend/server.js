@@ -253,6 +253,11 @@ function detectBrand(name) {
   if (value.includes('edison') || value.includes('edisson')) return 'Edison';
   if (value.includes('etalon')) return 'Etalon';
   if (value.includes('garanterm') || value.includes('garantem')) return 'Garanterm';
+  if (value.includes('eco')) return 'ECO';
+  if (value.includes('av engineering')) return 'AV Engineering';
+  if (value.includes('волат')) return 'Волат';
+  if (value.includes('volat')) return 'Волат';
+  if (value.includes('snowcap')) return 'Snowcap';
 
   return 'Другое';
 }
