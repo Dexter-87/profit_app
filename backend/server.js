@@ -258,6 +258,8 @@ function detectBrand(name) {
   if (value.includes('волат')) return 'Волат';
   if (value.includes('volat')) return 'Волат';
   if (value.includes('snowcap')) return 'Snowcap';
+  if (value.includes('philips')) return 'Philips';
+
 
   return 'Другое';
 }
