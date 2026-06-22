@@ -2209,6 +2209,10 @@ for (const row of expenseRows) {
     });
 
   const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
+  console.log(
+  'BRANDS FINAL:',
+  JSON.stringify(brands, null, 2)
+  );
   const clients = Object.values(clientMap).sort((a, b) => b.profit - a.profit);
 
   const currentMonthName = (() => {
