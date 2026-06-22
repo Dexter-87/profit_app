@@ -3142,6 +3142,7 @@ app.get('/clients-report/pdf', async (req, res) => {
 
 // ================= ОТЧЁТ ПО БРЕНДАМ =================
 
+console.log('BRANDS PDF ROUTE LOADED');
 app.get('/brands-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
