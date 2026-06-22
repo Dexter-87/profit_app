@@ -2058,6 +2058,10 @@ async function calculateAnalytics(req, topLimit = 5) {
       dailyMap[dateKey] = (dailyMap[dateKey] || 0) + profit;
     }
 
+    if (name.toLowerCase().includes('snowcap')) {
+      console.log('SNOWCAP DEBUG:', name, '=>', detectBrand(name));
+    }
+
     const brand = detectBrand(name);
 
     if (!brandMap[brand]) {
