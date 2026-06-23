@@ -186,6 +186,9 @@ static Future<void> deleteSaleByBatch(String batchId) async {
     required String date,
     String brands = '',
   }) async {
+
+    debugPrint('API BRANDS: $brands');
+
     final response = await http.post(
       Uri.parse('$baseUrl/expenses'),
       headers: {'Content-Type': 'application/json'},

@@ -245,6 +245,8 @@ class _ExpensesPageState extends State<ExpensesPage> {
           throw Exception(response.body);
         }
       } else {
+      debugPrint('USE BRANDS: $_useBrands');
+      debugPrint('SELECTED BRANDS: ${_selectedBrands.join(',')}');
         await ApiService.addExpense(
           amount: amount,
           owner: _selectedType,
@@ -252,7 +254,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
           comment: comment,
           channel: _selectedChannel,
           date: _formatDisplayDate(_expenseDate),
-          brands: _selectedBrands.join(','),
+          brands: _useBrands ? _selectedBrands.join(',') : '',
         );
       }
 

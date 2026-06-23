@@ -1226,6 +1226,7 @@ app.post('/import-kaspi', async (req, res) => {
       return {
         date: item.date,
         channel: 'Каспий',
+        brand: priceItem?.brand || 'Другое',
         product: item.name,
         order_number: item.orderNumber,
         cost: costPrice,
@@ -1540,6 +1541,8 @@ app.get('/expenses', async (req, res) => {
 app.post('/expenses', async (req, res) => {
   try {
     const { amount, owner, type, comment, channel, date, brands } = req.body;
+    console.log('EXPENSE BODY:', req.body);
+    console.log('EXPENSE BRANDS:', brands);
     const expenseChannel = channel || 'Общие';
 
     const sheetsApi = await getSheetsApi();
@@ -1958,6 +1961,8 @@ async function calculateAnalytics(req, topLimit = 5) {
     'Канал': row.channel || 'Общие',
     'Комментарий': row.comment,
     'Владелец': row.owner,
+    brands: row.brands || '',
+    'Бренды': row.brands || '',
   }));
 
   const distributionRows = (distributionRowsRaw || []).map((row) => ({
@@ -2022,8 +2027,8 @@ async function calculateAnalytics(req, topLimit = 5) {
     const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
     const commission = toNumber(getCell(row, ['Комиссия Kaspi', 'Комиссия', 'commission'], 6));
 
-    const calculatedProfit = rrc - cost - commission;
-    const profit = calculatedProfit;
+    const grossProfit = rrc - cost;
+    const profit = grossProfit - commission;
 
     const shares = selectedModel === 'capital_work'
       ? {
@@ -2071,7 +2076,10 @@ async function calculateAnalytics(req, topLimit = 5) {
       brandMap[brand] = {
         brand,
         revenue: 0,
-        profit: 0,
+        grossProfit: 0,
+        kaspiCommission: 0,
+        expenses: 0,
+        netProfit: 0,
         myProfit: 0,
         alexProfit: 0,
         count: 0,
@@ -2079,9 +2087,8 @@ async function calculateAnalytics(req, topLimit = 5) {
     }
 
     brandMap[brand].revenue += rrc;
-    brandMap[brand].profit += profit;
-    brandMap[brand].myProfit += rowMyProfit;
-    brandMap[brand].alexProfit += rowAlexProfit;
+    brandMap[brand].grossProfit += grossProfit;
+    brandMap[brand].kaspiCommission += commission;
     brandMap[brand].count++;
 
     if (!clientMap[client]) {
@@ -2211,7 +2218,62 @@ for (const row of expenseRows) {
       return da - db;
     });
 
-  const brands = Object.values(brandMap).sort((a, b) => b.profit - a.profit);
+    for (const row of expenseRows) {
+      const rawDate = getCell(row, ['Дата', 'date', 'Дата_рус'], 0);
+
+      if ((from || to) && !rowInPeriod(rawDate, from, to)) continue;
+
+      const expenseBrandsRaw = String(
+        getCell(row, ['brands', 'Бренды'], null)
+      ).trim();
+
+      if (!expenseBrandsRaw) continue;
+
+      const amount = toNumber(
+        getCell(row, ['Сумма', 'amount'], 2)
+      );
+
+      const expenseBrands = expenseBrandsRaw
+        .split(',')
+        .map((b) => b.trim())
+        .filter(Boolean);
+
+      if (expenseBrands.length === 0) continue;
+
+      const part = amount / expenseBrands.length;
+
+      for (const brand of expenseBrands) {
+        if (!brandMap[brand]) {
+          brandMap[brand] = {
+            brand,
+            revenue: 0,
+            grossProfit: 0,
+            kaspiCommission: 0,
+            expenses: 0,
+            netProfit: 0,
+            myProfit: 0,
+            alexProfit: 0,
+            count: 0,
+          };
+        }
+
+        brandMap[brand].expenses += part;
+      }
+    }
+
+    for (const item of Object.values(brandMap)) {
+      item.netProfit =
+        item.grossProfit -
+        item.kaspiCommission -
+        item.expenses;
+
+      item.profit = item.netProfit;
+
+      item.myProfit = item.netProfit * capitalWorkShares.stasShare;
+      item.alexProfit = item.netProfit * capitalWorkShares.alexShare;
+    }
+
+  const brands = Object.values(brandMap).sort((a, b) => b.netProfit - a.netProfit);
   console.log(
   'BRANDS FINAL:',
   JSON.stringify(brands, null, 2)
@@ -3146,6 +3208,7 @@ app.get('/clients-report/pdf', async (req, res) => {
 // ================= ОТЧЁТ ПО БРЕНДАМ =================
 
 console.log('BRANDS PDF ROUTE LOADED');
+
 app.get('/brands-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
@@ -3154,19 +3217,22 @@ app.get('/brands-report/pdf', async (req, res) => {
     let y = drawTop(doc, 'Отчёт по брендам', periodText(data));
 
     drawCard(doc, 36, y, 166, 'Выручка', money(data.revenue));
-    drawCard(doc, 214, y, 166, 'Прибыль', money(data.totalProfit));
-    drawCard(doc, 392, y, 166, 'Маржинальность', `${Number(data.margin || 0).toFixed(1)}%`);
+    drawCard(doc, 214, y, 166, 'Валовая прибыль', money(data.totalGrossProfit || data.totalProfit));
+    drawCard(doc, 392, y, 166, 'Чистая прибыль', money(data.totalNetProfit || data.totalProfit));
 
     y += 82;
     y = drawSectionTitle(doc, 'Бренды', y);
 
     y = drawTableHeader(doc, y, [
-      { title: '№', x: 46, w: 25 },
-      { title: 'Бренд', x: 80, w: 100 },
-      { title: 'Выручка', x: 190, w: 85, align: 'right' },
-      { title: 'Прибыль', x: 285, w: 85, align: 'right' },
-      { title: 'Стас', x: 380, w: 75, align: 'right' },
-      { title: 'Алексей', x: 465, w: 80, align: 'right' },
+      { title: '№', x: 46, w: 22 },
+      { title: 'Бренд', x: 70, w: 75 },
+      { title: 'Выручка', x: 145, w: 65, align: 'right' },
+      { title: 'Валовая', x: 215, w: 60, align: 'right' },
+      { title: 'Комис.', x: 280, w: 55, align: 'right' },
+      { title: 'Расходы', x: 340, w: 60, align: 'right' },
+      { title: 'После', x: 405, w: 60, align: 'right' },
+      { title: 'Стас', x: 470, w: 45, align: 'right' },
+      { title: 'Алексей', x: 515, w: 45, align: 'right' },
     ]);
 
     data.brands.forEach((item, index) => {
@@ -3174,16 +3240,45 @@ app.get('/brands-report/pdf', async (req, res) => {
         doc,
         y,
         [
-          { value: index + 1, x: 46, w: 25 },
-          { value: item.brand || 'Другое', x: 80, w: 100 },
-          { value: money(item.revenue), x: 190, w: 85, align: 'right' },
-          { value: money(item.profit), x: 285, w: 85, align: 'right' },
-          { value: money(item.myProfit), x: 380, w: 75, align: 'right' },
-          { value: money(item.alexProfit), x: 465, w: 80, align: 'right' },
+          { value: index + 1, x: 46, w: 22 },
+          { value: item.brand || 'Другое', x: 70, w: 75 },
+          { value: money(item.revenue), x: 145, w: 65, align: 'right' },
+          { value: money(item.grossProfit), x: 215, w: 60, align: 'right' },
+          { value: money(item.kaspiCommission), x: 280, w: 55, align: 'right' },
+          { value: money(item.expenses), x: 340, w: 60, align: 'right' },
+          { value: money(item.netProfit), x: 405, w: 60, align: 'right' },
+          { value: money(item.myProfit), x: 470, w: 45, align: 'right' },
+          { value: money(item.alexProfit), x: 515, w: 45, align: 'right' },
         ],
         index
       );
     });
+
+    const totalGrossProfit = data.brands.reduce((sum, b) => sum + (b.grossProfit || 0), 0);
+    const totalKaspiCommission = data.brands.reduce((sum, b) => sum + (b.kaspiCommission || 0), 0);
+    const totalExpenses = data.brands.reduce((sum, b) => sum + (b.expenses || 0), 0);
+    const totalNetProfit = data.brands.reduce((sum, b) => sum + (b.netProfit || 0), 0);
+    const totalMyProfit = data.brands.reduce((sum, b) => sum + (b.myProfit || 0), 0);
+    const totalAlexProfit = data.brands.reduce((sum, b) => sum + (b.alexProfit || 0), 0);
+
+    y += 10;
+
+    y = drawTableRow(
+      doc,
+      y,
+      [
+        { value: '', x: 46, w: 22 },
+        { value: 'ИТОГО', x: 70, w: 75 },
+        { value: money(data.revenue), x: 145, w: 65, align: 'right' },
+        { value: money(totalGrossProfit), x: 215, w: 60, align: 'right' },
+        { value: money(totalKaspiCommission), x: 280, w: 55, align: 'right' },
+        { value: money(totalExpenses), x: 340, w: 60, align: 'right' },
+        { value: money(totalNetProfit), x: 405, w: 60, align: 'right' },
+        { value: money(totalMyProfit), x: 470, w: 45, align: 'right' },
+        { value: money(totalAlexProfit), x: 515, w: 45, align: 'right' },
+      ],
+      999
+    );
 
     doc.end();
   } catch (error) {
