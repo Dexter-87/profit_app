@@ -1226,7 +1226,6 @@ app.post('/import-kaspi', async (req, res) => {
       return {
         date: item.date,
         channel: 'Каспий',
-        brand: priceItem?.brand || 'Другое',
         product: item.name,
         order_number: item.orderNumber,
         cost: costPrice,
