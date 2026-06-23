@@ -3212,12 +3212,21 @@ app.get('/brands-report/pdf', async (req, res) => {
   try {
     const data = await buildAnalyticsReportData(req);
     const doc = setupPdf(res, 'brands-report.pdf');
+    const totalGrossProfit = data.brands.reduce(
+      (sum, b) => sum + (b.grossProfit || 0),
+      0
+    );
+
+    const totalNetProfit = data.brands.reduce(
+      (sum, b) => sum + (b.netProfit || 0),
+      0
+    );
 
     let y = drawTop(doc, 'Отчёт по брендам', periodText(data));
 
     drawCard(doc, 36, y, 166, 'Выручка', money(data.revenue));
-    drawCard(doc, 214, y, 166, 'Валовая прибыль', money(data.totalGrossProfit || data.totalProfit));
-    drawCard(doc, 392, y, 166, 'Чистая прибыль', money(data.totalNetProfit || data.totalProfit));
+    drawCard(doc, 214, y, 166, 'Валовая прибыль', money(totalGrossProfit));
+    drawCard(doc, 392, y, 166, 'Чистая прибыль', money(totalNetProfit));
 
     y += 82;
     y = drawSectionTitle(doc, 'Бренды', y);
@@ -3253,10 +3262,8 @@ app.get('/brands-report/pdf', async (req, res) => {
       );
     });
 
-    const totalGrossProfit = data.brands.reduce((sum, b) => sum + (b.grossProfit || 0), 0);
     const totalKaspiCommission = data.brands.reduce((sum, b) => sum + (b.kaspiCommission || 0), 0);
     const totalExpenses = data.brands.reduce((sum, b) => sum + (b.expenses || 0), 0);
-    const totalNetProfit = data.brands.reduce((sum, b) => sum + (b.netProfit || 0), 0);
     const totalMyProfit = data.brands.reduce((sum, b) => sum + (b.myProfit || 0), 0);
     const totalAlexProfit = data.brands.reduce((sum, b) => sum + (b.alexProfit || 0), 0);
 
