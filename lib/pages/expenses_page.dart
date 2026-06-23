@@ -26,6 +26,22 @@ class _ExpensesPageState extends State<ExpensesPage> {
   String _selectedChannel = 'Общие';
   String _selectedType = 'Стас';
   bool _isSaving = false;
+  bool _useBrands = false;
+
+  final List<String> _brands = [
+    'Thermex',
+    'Snowcap',
+    'Etalon',
+    'Edison',
+    'Garanterm',
+    'Ariston',
+    'Philips',
+    'AV Engineering',
+    'Волат',
+    'ECO',
+  ];
+
+  final Set<String> _selectedBrands = {};
 
   String _selectedPeriod = '30 дней';
   DateTime? _dateFrom;
@@ -236,6 +252,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
           comment: comment,
           channel: _selectedChannel,
           date: _formatDisplayDate(_expenseDate),
+          brands: _selectedBrands.join(','),
         );
       }
 
@@ -707,6 +724,54 @@ Widget _channelChoice(String title) {
                 const SizedBox(height: 16),
 
                 const SizedBox(height: 16),
+
+                const SizedBox(height: 16),
+
+                AppUi.sectionCard(
+                  title: 'Бренды',
+                  icon: Icons.sell_outlined,
+                  accent: _accentColors.first,
+                  child: Column(
+                    children: [
+
+                      SwitchListTile(
+                        value: _useBrands,
+                        title: const Text('Распределить по брендам'),
+                        onChanged: (v) {
+                          setState(() {
+                            _useBrands = v;
+                          });
+                        },
+                      ),
+
+                      if (_useBrands)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _brands.map((brand) {
+
+                            final selected =
+                                _selectedBrands.contains(brand);
+
+                            return FilterChip(
+                              label: Text(brand),
+                              selected: selected,
+                              onSelected: (value) {
+                                setState(() {
+                                  if (value) {
+                                    _selectedBrands.add(brand);
+                                  } else {
+                                    _selectedBrands.remove(brand);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                    ],
+                  ),
+                ),
+
                 AppUi.sectionCard(
                   title: 'Сумма',
                   icon: Icons.payments_outlined,

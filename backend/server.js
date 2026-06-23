@@ -1539,7 +1539,7 @@ app.get('/expenses', async (req, res) => {
 
 app.post('/expenses', async (req, res) => {
   try {
-    const { amount, owner, type, comment, channel, date } = req.body;
+    const { amount, owner, type, comment, channel, date, brands } = req.body;
     const expenseChannel = channel || 'Общие';
 
     const sheetsApi = await getSheetsApi();
@@ -1576,6 +1576,7 @@ app.post('/expenses', async (req, res) => {
           owner: owner || '',
           channel: expenseChannel,
           comment: comment || '',
+          brands: brands || '',
         }])
         .select();
 
