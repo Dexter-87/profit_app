@@ -1315,12 +1315,63 @@ app.post('/add-sale', async (req, res) => {
     const saleDate = date || todayRu();
     const batchId = `BATCH-${Date.now()}`;
     const values = [];
+    const { data: prices, error: pricesError } = await supabase
+      .from('prices')
+      .select('*');
+
+    if (pricesError) throw pricesError;
+
+    const normalizeText = (value) =>
+      String(value || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/edisson/g, 'edison')
+        .replace(/[^\wа-яА-Я0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const findPriceItem = (productName) => {
+      const productNorm = normalizeText(productName);
+
+      let best = null;
+      let bestScore = 0;
+
+      for (const p of prices || []) {
+        const candidateNorm = normalizeText(
+          `${p.brand || ''} ${p.model || ''} ${p.full_name || ''}`
+        );
+
+        const productWords = productNorm.split(' ').filter(Boolean);
+        const candidateWords = candidateNorm.split(' ').filter(Boolean);
+        const candidateSet = new Set(candidateWords);
+
+        let score = 0;
+
+        for (const word of productWords) {
+          if (candidateSet.has(word)) score++;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = p;
+        }
+      }
+
+      return bestScore >= 3 ? best : null;
+    };
 
     for (const item of sourceItems) {
       const productName = cleanProductName(item.name || item.model || '');
       const qty = Math.max(1, parseInt(item.quantity || 1, 10));
       const costNumber = toNumber(item.cost);
       const priceNumber = toNumber(item.price);
+      const priceItem = findPriceItem(productName);
+
+      const supplierPrice = Number(priceItem?.supplier_price || 0);
+      const supplierName = priceItem?.supplier_name || '';
+      const supplierProfit = supplierPrice > 0
+        ? costNumber - supplierPrice
+        : 0;
 
       const itemChannel = String(item.channel || channel || 'ОПТ').trim();
       const itemOrderNumber =
@@ -1360,7 +1411,10 @@ app.post('/add-sale', async (req, res) => {
           '',
           itemClient,
           batchId,
-        ]);
+          supplierPrice || '',
+          supplierName || '',
+          supplierProfit || '',
+          ]);
       }
     }
 
@@ -1398,6 +1452,9 @@ try {
     comment: row[8] || '',
     client: row[13] || '',
     batch_id: row[14] || '',
+    supplier_price: Number(row[15]) || null,
+    supplier_name: row[16] || null,
+    supplier_profit: Number(row[17]) || null,
   }));
 
   const { error: supabaseError } = await supabase
