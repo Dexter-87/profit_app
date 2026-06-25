@@ -51,8 +51,8 @@ const INVESTMENTS_RANGE = 'Вложения!A:Z';
 const SIDE_INCOME_RANGE = 'ДопДоходы!A:N';
 const STOCK_RANGE = 'Остатки!A:B';
 
-const TEEG_PRICE_RANGE = 'Прайс!A:E';
-const ARISTON_PRICE_RANGE = 'Лист1!A:E';
+const TEEG_PRICE_RANGE = 'Прайс!A:G';
+const ARISTON_PRICE_RANGE = 'Лист1!A:G';
 
 const auth = new google.auth.GoogleAuth({
   keyFile: process.env.RENDER
@@ -443,6 +443,13 @@ app.get('/import-prices-to-supabase', async (req, res) => {
 
           const price = toNumber(getCell(row, ['Цена', 'price'], 3));
           const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
+          const supplierPrice = toNumber(
+            getCell(row, ['Цена поставщика', 'supplier_price'], 5)
+          );
+
+          const supplierName = String(
+            getCell(row, ['Поставщик', 'supplier_name'], 6)
+          ).trim();
 
           const fullName = cleanProductName(`${brand} ${model}`.trim());
 
@@ -452,6 +459,8 @@ app.get('/import-prices-to-supabase', async (req, res) => {
             price_type: priceType,
             price,
             cost,
+            supplier_price: supplierPrice || null,
+            supplier_name: supplierName || null,
             source,
             full_name: fullName,
           };

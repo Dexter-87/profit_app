@@ -222,6 +222,18 @@ static Future<void> deleteSaleByBatch(String batchId) async {
     );
   }
 
+  static Future<void> importPricesToSupabase() async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/import-prices-to-supabase'),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Ошибка обновления прайса: ${response.body}',
+      );
+    }
+  }
+
 static Future<void> savePlan({
   required String month,
   required num planProfit,

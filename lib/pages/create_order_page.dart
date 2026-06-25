@@ -1325,9 +1325,34 @@ Future<void> _importKaspiReport() async {
           );
         }
 
+        Future<void> _importPricesToSupabase() async {
+          try {
+            final response = await http.get(
+              Uri.parse('$baseUrl/import-prices-to-supabase'),
+            );
+
+            if (response.statusCode == 200) {
+              _showMessage('Прайс обновлен в Supabase');
+              await _loadPrices();
+            } else {
+              _showMessage('Ошибка обновления прайса: ${response.body}');
+            }
+          } catch (e) {
+            _showMessage('Ошибка обновления прайса: $e');
+          }
+        }
+
+
         Widget _actionButtons() {
           return Column(
             children: [
+              GradientButton(
+                text: 'Обновить прайс',
+                onTap: _importPricesToSupabase,
+              ),
+
+              const SizedBox(height: 10),
+
               if (_selectedChannel == 'Каспий') ...[
                 GradientButton(
                   text: 'Импорт Kaspi',
@@ -1337,7 +1362,7 @@ Future<void> _importKaspiReport() async {
               ],
 
               GradientButton(
-                text: _isSaving ? 'Сохраняю.' : 'Сохранить продажу',
+                text: _isSaving ? 'Сохраняю...' : 'Сохранить продажу',
                 onTap: () {
                   if (!_isSaving) {
                     _saveOrder();
