@@ -697,6 +697,13 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                             ),
                           ),
 
+                          const SizedBox(height: 10),
+                          _pdfButton(
+                            title: 'Отчёт по поставщикам',
+                            icon: Icons.local_shipping_outlined,
+                            endpoint: 'supplier-report',
+                          ),
+
                           const SizedBox(height: 16),
 
                           Row(

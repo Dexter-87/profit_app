@@ -2585,6 +2585,273 @@ for (const row of expenseRows) {
   };
 }
 
+app.get('/supplier-report', async (req, res) => {
+  try {
+    const supplier = String(req.query.supplier || '').trim();
+    const dateFrom = req.query.dateFrom || req.query.date_from || '';
+    const dateTo = req.query.dateTo || req.query.date_to || '';
+
+    let query = supabase
+      .from('sales')
+      .select('*')
+      .not('supplier_name', 'is', null)
+      .order('id', { ascending: false });
+
+    if (supplier) {
+      query = query.eq('supplier_name', supplier);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    const rows = (data || []).filter((row) => {
+      if (!dateFrom && !dateTo) return true;
+
+      const rowDate = parseDate(row.date);
+      if (!rowDate) return false;
+
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        from.setHours(0, 0, 0, 0);
+        if (rowDate < from) return false;
+      }
+
+      if (dateTo) {
+        const to = new Date(dateTo);
+        to.setHours(23, 59, 59, 999);
+        if (rowDate > to) return false;
+      }
+
+      return true;
+    });
+
+    const totalSupplierProfit = rows.reduce(
+      (sum, row) => sum + toNumber(row.supplier_profit),
+      0
+    );
+
+    const totalSales = rows.length;
+
+    const suppliers = [...new Set(
+      (data || [])
+        .map((row) => row.supplier_name)
+        .filter(Boolean)
+    )];
+
+    res.json({
+      ok: true,
+      supplier: supplier || 'Все',
+      suppliers,
+      totalSales,
+      totalSupplierProfit,
+      rows: rows.map((row) => ({
+        id: row.id,
+        date: row.date,
+        product: row.product,
+        channel: row.channel,
+        client: row.client,
+        sale_price: row.price,
+        alexey_price: row.cost,
+        supplier_price: row.supplier_price,
+        supplier_name: row.supplier_name,
+        supplier_profit: row.supplier_profit,
+      })),
+    });
+  } catch (error) {
+    console.error('Ошибка /supplier-report:', error);
+    res.status(500).json({
+      ok: false,
+      error: 'Ошибка отчета поставщика',
+      details: error.message,
+    });
+  }
+});
+
+app.get('/supplier-report/pdf', async (req, res) => {
+  try {
+    const supplier = String(req.query.supplier || '').trim();
+    const dateFrom = req.query.dateFrom || req.query.date_from || '';
+    const dateTo = req.query.dateTo || req.query.date_to || '';
+
+    let query = supabase
+      .from('sales')
+      .select('*')
+      .not('supplier_name', 'is', null)
+      .order('id', { ascending: false });
+
+    if (supplier) query = query.eq('supplier_name', supplier);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = (data || []).filter((row) => {
+      if (!dateFrom && !dateTo) return true;
+
+      const rowDate = parseDate(row.date);
+      if (!rowDate) return false;
+
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        from.setHours(0, 0, 0, 0);
+        if (rowDate < from) return false;
+      }
+
+      if (dateTo) {
+        const to = new Date(dateTo);
+        to.setHours(23, 59, 59, 999);
+        if (rowDate > to) return false;
+      }
+
+      return true;
+    });
+
+    const groupedMap = {};
+
+    for (const row of rows) {
+      const key = [
+        row.date,
+        row.product,
+        row.cost,
+        row.supplier_price,
+        row.supplier_name,
+      ].join('|');
+
+      if (!groupedMap[key]) {
+        groupedMap[key] = {
+          date: row.date,
+          product: row.product,
+          supplier_name: row.supplier_name,
+          cost: toNumber(row.cost),
+          supplier_price: toNumber(row.supplier_price),
+          quantity: 0,
+          supplier_profit: 0,
+        };
+      }
+
+      groupedMap[key].quantity += 1;
+      groupedMap[key].supplier_profit += toNumber(row.supplier_profit);
+    }
+
+    const groupedRows = Object.values(groupedMap);
+
+    const totalSupplierProfit = groupedRows.reduce(
+      (sum, row) => sum + toNumber(row.supplier_profit),
+      0
+    );
+
+    const totalQuantity = groupedRows.reduce(
+      (sum, row) => sum + toNumber(row.quantity),
+      0
+    );
+
+    const totalAlexeyPrice = groupedRows.reduce(
+      (sum, row) => sum + toNumber(row.cost) * toNumber(row.quantity),
+      0
+    );
+
+    const totalSupplierPrice = groupedRows.reduce(
+      (sum, row) => sum + toNumber(row.supplier_price) * toNumber(row.quantity),
+      0
+    );
+
+    const suppliers = [...new Set(rows.map((r) => r.supplier_name).filter(Boolean))];
+
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+    const fontPath = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
+    doc.registerFont('DejaVu', fontPath);
+    doc.font('DejaVu');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=supplier-report.pdf'
+    );
+
+    doc.pipe(res);
+
+    doc.fontSize(22).fillColor('#111827').text('TechnoOpt', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(18).fillColor('#2563EB').text('Отчёт по поставщикам', {
+      align: 'center',
+    });
+
+    doc.moveDown();
+
+    doc.fontSize(11).fillColor('#111827');
+    doc.text(`Период: ${dateFrom || '—'} - ${dateTo || '—'}`);
+    doc.text(`Поставщик: ${supplier || suppliers.join(', ') || 'Все'}`);
+    doc.text(`Продаж: ${totalQuantity}`);
+    doc.text(`Доход Вани: ${money(totalSupplierProfit)}`);
+
+    doc.moveDown();
+
+    let y = doc.y;
+
+    doc.roundedRect(40, y, 515, 24, 6).fill('#DBEAFE');
+
+    doc.fillColor('#111827').fontSize(9);
+    doc.text('Дата', 48, y + 7, { width: 65 });
+    doc.text('Модель', 115, y + 7, { width: 190 });
+    doc.text('Кол-во', 310, y + 7, { width: 45, align: 'right' });
+    doc.text('Цена Алексея', 365, y + 7, { width: 80, align: 'right' });
+    doc.text('Цена Вани', 455, y + 7, { width: 90, align: 'right' });
+
+    y += 32;
+
+    groupedRows.forEach((row, index) => {
+      if (y > 730) {
+        doc.addPage();
+        y = 40;
+      }
+
+      if (index % 2 === 0) {
+        doc.roundedRect(40, y - 4, 515, 28, 4).fill('#F8FAFC');
+      }
+
+      doc.fillColor('#111827').fontSize(8.5);
+      doc.text(row.date || '', 48, y, { width: 65 });
+      doc.text(row.product || '', 115, y, { width: 190 });
+      doc.text(String(row.quantity), 310, y, { width: 45, align: 'right' });
+      doc.text(money(row.cost), 365, y, { width: 80, align: 'right' });
+      doc.text(money(row.supplier_price), 455, y, {
+        width: 90,
+        align: 'right',
+      });
+
+      y += 30;
+    });
+
+    y += 10;
+    doc.moveTo(40, y).lineTo(555, y).strokeColor('#CBD5E1').stroke();
+    y += 16;
+
+    doc.fontSize(12).fillColor('#111827');
+    doc.text(`Итого цена Алексея: ${money(totalAlexeyPrice)}`, 40, y, {
+      align: 'right',
+    });
+    y += 18;
+
+    doc.text(`Итого цена Вани: ${money(totalSupplierPrice)}`, 40, y, {
+      align: 'right',
+    });
+    y += 18;
+
+    doc.fontSize(14).fillColor('#2563EB');
+    doc.text(`Итого доход Вани: ${money(totalSupplierProfit)}`, 40, y, {
+      align: 'right',
+    });
+
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /supplier-report/pdf:', error);
+    res.status(500).json({
+      error: 'Ошибка PDF отчёта поставщиков',
+      details: error.message,
+    });
+  }
+});
 
 // ================= АНАЛИТИКА =================
 
