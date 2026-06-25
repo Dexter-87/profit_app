@@ -472,6 +472,7 @@ app.get('/import-prices-to-supabase', async (req, res) => {
       ...normalizeRows(teegRows, 'TEEG'),
       ...normalizeRows(aristonRows, 'ARISTON'),
     ];
+    console.log('PRICE TEST:', allPrices.slice(0, 5));
 
     await supabase.from('prices').delete().neq('id', 0);
 
