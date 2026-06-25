@@ -41,8 +41,8 @@ const SALES_SPREADSHEET_ID = '1D26s-VjLPvg43z-Hk38fU7Y4tPFZ9h-UfFjJzQnvtB0';
 const TEEG_PRICE_SPREADSHEET_ID = '16WJB_55AWQiKOvyplY4eA1hQnJHGB4JzxF4640vMp8s';
 const ARISTON_PRICE_SPREADSHEET_ID = '11cAH2QbdH-FcK5oY0m59GFsr77V3HHzZ47jxC0WOKR0';
 
-const SALES_RANGE = 'Лист1!A:O';
-const SALES_WRITE_RANGE = 'Лист1!A:O';
+const SALES_RANGE = 'Лист1!A:R';
+const SALES_WRITE_RANGE = 'Лист1!A:R';
 
 const EXPENSES_RANGE = 'Expenses!A:Z';
 const PLAN_RANGE = 'app_plan!A:Z';
@@ -1411,9 +1411,6 @@ app.post('/add-sale', async (req, res) => {
           '',
           itemClient,
           batchId,
-          supplierPrice || '',
-          supplierName || '',
-          supplierProfit || '',
           ]);
       }
     }
@@ -1434,28 +1431,40 @@ app.post('/add-sale', async (req, res) => {
 
     await sheetsApi.spreadsheets.values.update({
       spreadsheetId: SALES_SPREADSHEET_ID,
-      range: `Лист1!A${nextRow}:O${nextRow + values.length - 1}`,
+      range: `Лист1!A${nextRow}:R${nextRow + values.length - 1}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values },
     });
 
 try {
-  const supabaseRows = values.map((row) => ({
-    date: row[0] || '',
-    channel: row[1] || '',
-    product: row[2] || '',
-    order_number: row[3] || '',
-    cost: Number(row[4]) || 0,
-    price: Number(row[5]) || 0,
-    commission: Number(row[6]) || 0,
-    profit: Number(row[7]) || 0,
-    comment: row[8] || '',
-    client: row[13] || '',
-    batch_id: row[14] || '',
-    supplier_price: Number(row[15]) || null,
-    supplier_name: row[16] || null,
-    supplier_profit: Number(row[17]) || null,
-  }));
+  const supabaseRows = values.map((row) => {
+    const productName = row[2] || '';
+    const costNumber = Number(row[4]) || 0;
+    const priceItem = findPriceItem(productName);
+
+    const supplierPrice = Number(priceItem?.supplier_price || 0);
+    const supplierName = priceItem?.supplier_name || '';
+    const supplierProfit = supplierPrice > 0
+      ? costNumber - supplierPrice
+      : 0;
+
+    return {
+      date: row[0] || '',
+      channel: row[1] || '',
+      product: productName,
+      order_number: row[3] || '',
+      cost: costNumber,
+      price: Number(row[5]) || 0,
+      commission: Number(row[6]) || 0,
+      profit: Number(row[7]) || 0,
+      comment: row[8] || '',
+      client: row[13] || '',
+      batch_id: row[14] || '',
+      supplier_price: supplierPrice || null,
+      supplier_name: supplierName || null,
+      supplier_profit: supplierProfit || null,
+    };
+  });
 
   const { error: supabaseError } = await supabase
     .from('sales')
@@ -1519,7 +1528,7 @@ app.post('/delete-sale', async (req, res) => {
 
       const valuesResponse = await sheetsApi.spreadsheets.values.get({
         spreadsheetId: SALES_SPREADSHEET_ID,
-        range: 'Лист1!A:O',
+        range: 'Лист1!A:R',
       });
 
       const rows = valuesResponse.data.values || [];
