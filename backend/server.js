@@ -1139,75 +1139,44 @@ app.post('/import-kaspi', async (req, res) => {
     };
 
     const findPriceItem = (productName) => {
-      const productNorm = normalizeText(productName);
+      const productNorm = normalizeText(productName)
+        .replace(/(\d+)\s*(шт|штук|штуки)/gi, '')
+        .trim();
 
-      const ignoreWords = [
-        'водонагреватель',
-        'накопительный',
-        'белый',
-        'белая',
-      ];
-
-      const getWords = (text) =>
-        normalizeText(text)
-          .split(' ')
-          .filter(Boolean);
-
-      const productWords = getWords(productNorm);
+      const productWords = productNorm.split(' ').filter(Boolean);
       const productSet = new Set(productWords);
-
-      const hasMismatch = (candidateSet) => {
-        if (productSet.has('slim') !== candidateSet.has('slim')) {
-          return true;
-        }
-
-        const groups = [
-          ['v', 'h'],
-          ['pro1', 'blu1'],
-          ['er', 'es', 'ess', 'ers'],
-          ['or', 'ur'],
-        ];
-
-        for (const group of groups) {
-          const productMarkers = group.filter((x) => productSet.has(x));
-          const candidateMarkers = group.filter((x) => candidateSet.has(x));
-
-          if (
-            productMarkers.length > 0 &&
-            candidateMarkers.length > 0 &&
-            !productMarkers.some((x) => candidateMarkers.includes(x))
-          ) {
-            return true;
-          }
-        }
-
-        return false;
-      };
 
       let best = null;
       let bestScore = 0;
 
       for (const p of prices || []) {
-        const candidateNorm = normalizeText(
-          `${p.brand || ''} ${p.model || ''} ${p.full_name || p.fullName || ''}`
+        const model = normalizeText(p.model || '');
+        const fullName = normalizeText(p.full_name || p.fullName || '');
+        const brand = normalizeText(p.brand || '');
+
+        if (!model) continue;
+
+        const modelWords = model.split(' ').filter(Boolean);
+        const candidateNorm = normalizeText(`${brand} ${model} ${fullName}`);
+        const candidateWords = candidateNorm.split(' ').filter(Boolean);
+
+        const importantModelWords = modelWords.filter((word) =>
+          word.length > 1 && !['шт', 'штук', 'штуки'].includes(word)
         );
 
-        const candidateWords = getWords(candidateNorm);
-        const candidateSet = new Set(candidateWords);
+        const modelMatched = importantModelWords.every((word) =>
+          productSet.has(word)
+        );
 
-        if (hasMismatch(candidateSet)) {
-          continue;
-        }
+        if (!modelMatched) continue;
 
         let score = 0;
 
         for (const word of productWords) {
-          if (ignoreWords.includes(word)) continue;
-
-          if (candidateSet.has(word)) {
-            score += 1;
-          }
+          if (candidateWords.includes(word)) score += 1;
         }
+
+        score += importantModelWords.length * 3;
 
         if (score > bestScore) {
           bestScore = score;
@@ -1215,8 +1184,20 @@ app.post('/import-kaspi', async (req, res) => {
         }
       }
 
-      return bestScore >= 3 ? best : null;
+      return best;
     };
+
+    function extractQuantity(name) {
+      const text = String(name || '').toLowerCase();
+
+      const match = text.match(/(\d+)\s*(шт|штук|штуки)/i);
+
+      if (match) {
+        return Number(match[1]) || 1;
+      }
+
+      return 1;
+    }
 
     const rowsToInsert = newItems.map((item) => {
       const priceItem = findPriceItem(item.name);
@@ -1229,18 +1210,23 @@ app.post('/import-kaspi', async (req, res) => {
         0
       );
 
+      const quantity = extractQuantity(item.name);
+
+
       const salePrice = Number(item.salePrice || 0);
       const commission = Number(item.commission || 0);
+
+      const totalCost = costPrice * quantity;
 
       return {
         date: item.date,
         channel: 'Каспий',
         product: item.name,
         order_number: item.orderNumber,
-        cost: costPrice,
+        cost: totalCost,
         price: salePrice,
         commission,
-        profit: salePrice - costPrice - commission,
+        profit: salePrice - totalCost - commission,
         comment: item.comment || '',
         client: 'Kaspi',
       };

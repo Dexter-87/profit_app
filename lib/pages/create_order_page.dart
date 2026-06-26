@@ -23,6 +23,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   String _selectedChannel = 'ОПТ';
   String _selectedPriceType = 'Цена 0';
+  String? _selectedSupplier;
 
   bool _isSaving = false;
   bool _loadingPrices = true;
@@ -338,6 +339,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         'channel': channel,
         'client': client,
         'orderNumber': orderNumber,
+        'supplierName': _selectedSupplier,
       });
 
       _productController.clear();
@@ -1248,6 +1250,38 @@ Future<void> _importKaspiReport() async {
 
                 _sectionTitle('Клиент'),
                 _clientSearchBlock(),
+                const SizedBox(height: 16),
+
+                _sectionTitle('Поставщик'),
+
+                Container(
+                  decoration: AppUi.cardDecoration(
+                    color: AppColors.bg,
+                    radius: 18,
+                    borderColor: AppColors.stroke,
+                    shadows: const [],
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedSupplier,
+                      isExpanded: true,
+                      hint: const Text('Без поставщика'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Ваня',
+                          child: Text('Ваня'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSupplier = value;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+
                 const SizedBox(height: 16),
 
                 _sectionTitle('Товар'),
