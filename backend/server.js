@@ -1146,6 +1146,8 @@ app.post('/import-kaspi', async (req, res) => {
       const productWords = productNorm.split(' ').filter(Boolean);
       const productSet = new Set(productWords);
 
+      const productCodes = productNorm.match(/\d{3,}[-/]\d{1,}/g) || [];
+
       let best = null;
       let bestScore = 0;
 
@@ -1159,6 +1161,18 @@ app.post('/import-kaspi', async (req, res) => {
         const modelWords = model.split(' ').filter(Boolean);
         const candidateNorm = normalizeText(`${brand} ${model} ${fullName}`);
         const candidateWords = candidateNorm.split(' ').filter(Boolean);
+
+        const candidateCodes = candidateNorm.match(/\d{3,}[-/]\d{1,}/g) || [];
+
+        if (productCodes.length > 0 && candidateCodes.length > 0) {
+          const hasSameCode = productCodes.some((code) =>
+            candidateCodes.includes(code)
+          );
+
+          if (hasSameCode) {
+            return p;
+          }
+        }
 
         const importantModelWords = modelWords.filter((word) =>
           word.length > 1 && !['шт', 'штук', 'штуки'].includes(word)
