@@ -51,7 +51,7 @@ const INVESTMENTS_RANGE = 'Вложения!A:Z';
 const SIDE_INCOME_RANGE = 'ДопДоходы!A:N';
 const STOCK_RANGE = 'Остатки!A:B';
 
-const TEEG_PRICE_RANGE = 'Прайс!A:G';
+const TEEG_PRICE_RANGE = 'Прайс!A:H';
 const ARISTON_PRICE_RANGE = 'Лист1!A:G';
 
 const auth = new google.auth.GoogleAuth({
@@ -435,26 +435,42 @@ app.get('/import-prices-to-supabase', async (req, res) => {
     const normalizeRows = (rows, source) => {
       return rows
         .map((row) => {
+          const hasArticle = source === 'TEEG';
+
           const brand = String(getCell(row, ['Бренд', 'brand'], 0)).trim();
-          const model = String(getCell(row, ['Модель', 'model'], 1)).trim();
-          const priceType = String(
-            getCell(row, ['ТипЦены', 'Тип цены', 'priceType'], 2)
+          const article = hasArticle
+            ? String(getCell(row, ['Артикул', 'article'], 1)).trim()
+            : '';
+
+          const model = String(
+            getCell(row, ['Модель', 'model'], hasArticle ? 2 : 1)
           ).trim();
 
-          const price = toNumber(getCell(row, ['Цена', 'price'], 3));
-          const cost = toNumber(getCell(row, ['Себестоимость', 'cost'], 4));
+          const priceType = String(
+            getCell(row, ['ТипЦены', 'Тип цены', 'priceType'], hasArticle ? 3 : 2)
+          ).trim();
+
+          const price = toNumber(
+            getCell(row, ['Цена', 'price'], hasArticle ? 4 : 3)
+          );
+
+          const cost = toNumber(
+            getCell(row, ['Себестоимость', 'cost'], hasArticle ? 5 : 4)
+          );
+
           const supplierPrice = toNumber(
-            getCell(row, ['Цена поставщика', 'supplier_price'], 5)
+            getCell(row, ['Цена поставщика', 'supplier_price'], hasArticle ? 6 : 5)
           );
 
           const supplierName = String(
-            getCell(row, ['Поставщик', 'supplier_name'], 6)
+            getCell(row, ['Поставщик', 'supplier_name'], hasArticle ? 7 : 6)
           ).trim();
 
           const fullName = cleanProductName(`${brand} ${model}`.trim());
 
           return {
             brand,
+            article: article || null,
             model,
             price_type: priceType,
             price,
@@ -1142,6 +1158,17 @@ app.post('/import-kaspi', async (req, res) => {
       const productNorm = normalizeText(productName)
         .replace(/(\d+)\s*(шт|штук|штуки)/gi, '')
         .trim();
+
+      const productRaw = String(productName || '').toLowerCase();
+
+      const articleMatch = (prices || []).find((p) => {
+        const article = String(p.article || '').toLowerCase().trim();
+        return article && productRaw.includes(article);
+      });
+
+      if (articleMatch) {
+        return articleMatch;
+      }
 
       const productWords = productNorm.split(' ').filter(Boolean);
       const productSet = new Set(productWords);
