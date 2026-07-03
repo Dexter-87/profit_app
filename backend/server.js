@@ -259,6 +259,11 @@ function detectBrand(name) {
   if (value.includes('volat')) return 'Волат';
   if (value.includes('snowcap')) return 'Snowcap';
   if (value.includes('philips')) return 'Philips';
+  if (value.includes('solaris')) return 'SOLARIS';
+  if (value.includes('startul')) return 'STARTUL GARDEN';
+  if (value.includes('gepard')) return 'GEPARD';
+  if (value.includes('wortex')) return 'WORTEX';
+  if (value.includes('bolat')) return 'Волат';
 
 
   return 'Другое';
