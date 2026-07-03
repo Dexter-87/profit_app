@@ -2051,6 +2051,7 @@ async function calculateAnalytics(req, topLimit = 5) {
     'Дата': row.date,
     'Канал': row.channel,
     'Наименование': row.product,
+     brand: row.brand || '',
     'Номер заказа': row.order_number,
     'Себестоимость': row.cost,
     'РРЦ': row.price,
