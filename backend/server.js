@@ -253,18 +253,16 @@ function detectBrand(name) {
   if (value.includes('edison') || value.includes('edisson')) return 'Edison';
   if (value.includes('etalon')) return 'Etalon';
   if (value.includes('garanterm') || value.includes('garantem')) return 'Garanterm';
+
+  if (value.includes('av engineering') || value.includes('ave')) return 'AV Engineering';
+  if (value.includes('волат') || value.includes('bolat')) return 'Волат';
+  if (value.includes('solaris')) return 'SOLARIS';
+  if (value.includes('startul') || value.includes('стартул')) return 'STARTUL GARDEN';
+  if (value.includes('gepard') || value.includes('гепард') || value.includes('gp0301')) return 'GEPARD';
+  if (value.includes('wortex') || value.includes('вортекс')) return 'WORTEX';
   if (value.includes('eco')) return 'ECO';
-  if (value.includes('av engineering')) return 'AV Engineering';
-  if (value.includes('волат')) return 'Волат';
-  if (value.includes('volat')) return 'Волат';
   if (value.includes('snowcap')) return 'Snowcap';
   if (value.includes('philips')) return 'Philips';
-  if (value.includes('solaris')) return 'SOLARIS';
-  if (value.includes('startul')) return 'STARTUL GARDEN';
-  if (value.includes('gepard')) return 'GEPARD';
-  if (value.includes('wortex')) return 'WORTEX';
-  if (value.includes('bolat')) return 'Волат';
-
 
   return 'Другое';
 }
