@@ -1245,6 +1245,7 @@ app.post('/import-kaspi', async (req, res) => {
 
     const rowsToInsert = newItems.map((item) => {
       const priceItem = findPriceItem(item.name);
+      const brand = priceItem?.brand || detectBrand(item.name);
 
       const costPrice = Number(
         priceItem?.cost ??
@@ -1265,6 +1266,7 @@ app.post('/import-kaspi', async (req, res) => {
       return {
         date: item.date,
         channel: 'Каспий',
+        brand,
         product: item.name,
         order_number: item.orderNumber,
         cost: totalCost,
@@ -2174,7 +2176,7 @@ async function calculateAnalytics(req, topLimit = 5) {
       console.log('SNOWCAP DEBUG:', name, '=>', detectBrand(name));
     }
 
-    const brand = detectBrand(name);
+    const brand = row.brand || detectBrand(name);
 
     if (!brandMap[brand]) {
       brandMap[brand] = {
