@@ -1234,10 +1234,11 @@ app.post('/import-kaspi', async (req, res) => {
     function extractQuantity(name) {
       const text = String(name || '').toLowerCase();
 
-      const match = text.match(/(\d+)\s*(шт|штук|штуки)/i);
+      const matches = [...text.matchAll(/(\d+)\s*(шт|штук|штуки)/gi)];
 
-      if (match) {
-        return Number(match[1]) || 1;
+      if (matches.length > 0) {
+        const lastMatch = matches[matches.length - 1];
+        return Number(lastMatch[1]) || 1;
       }
 
       return 1;
