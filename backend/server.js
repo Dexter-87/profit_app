@@ -407,11 +407,27 @@ function normalizePriceRows(rows, source) {
 
 app.get('/prices', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('prices')
-      .select('*');
+    let data = [];
+    let from = 0;
+    const pageSize = 1000;
 
-    if (error) throw error;
+    while (true) {
+      const { data: chunk, error } = await supabase
+        .from('prices')
+        .select('*')
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) throw error;
+
+      if (!chunk || chunk.length === 0) break;
+
+      data = data.concat(chunk);
+
+      if (chunk.length < pageSize) break;
+
+      from += pageSize;
+    }
 
     res.json(data);
   } catch (error) {
@@ -2120,6 +2136,7 @@ async function calculateAnalytics(req, topLimit = 5) {
   const topMap = {};
   const dailyMap = {};
   const brandMap = {};
+  const otherProductsMap = {};
   const clientMap = {};
   const sideIncomeItems = [];
 
@@ -2179,6 +2196,25 @@ async function calculateAnalytics(req, topLimit = 5) {
     }
 
     const brand = row.brand || detectBrand(name);
+
+    if (brand === 'Другое') {
+      if (!otherProductsMap[name]) {
+        otherProductsMap[name] = {
+          name,
+          revenue: 0,
+          grossProfit: 0,
+          commission: 0,
+          netProfit: 0,
+          count: 0,
+        };
+      }
+
+      otherProductsMap[name].revenue += rrc;
+      otherProductsMap[name].grossProfit += grossProfit;
+      otherProductsMap[name].commission += commission;
+      otherProductsMap[name].netProfit += profit;
+      otherProductsMap[name].count++;
+    }
 
     if (!brandMap[brand]) {
       brandMap[brand] = {
@@ -2381,7 +2417,11 @@ for (const row of expenseRows) {
       item.alexProfit = item.netProfit * capitalWorkShares.alexShare;
     }
 
-  const brands = Object.values(brandMap).sort((a, b) => b.netProfit - a.netProfit);
+
+  const otherProducts = Object.values(otherProductsMap)
+    .sort((a, b) => b.revenue - a.revenue);
+  const brands = Object.values(brandMap)
+  .sort((a, b) => b.netProfit - a.netProfit);
   console.log(
   'BRANDS FINAL:',
   JSON.stringify(brands, null, 2)
@@ -2608,6 +2648,7 @@ for (const row of expenseRows) {
     topProducts,
     dailyProfit,
     brands,
+    otherProducts,
     clients,
 
     revenuePlan,
@@ -3662,6 +3703,69 @@ app.get('/brands-report/pdf', async (req, res) => {
       999
     );
 
+if (data.otherProducts && data.otherProducts.length > 0) {
+  if (y > 620) {
+    doc.addPage();
+    y = 50;
+  } else {
+    y += 25;
+  }
+
+  y = drawSectionTitle(doc, 'Расшифровка категории «Другое»', y);
+
+  y = drawTableHeader(doc, y, [
+    { title: '№', x: 46, w: 25 },
+    { title: 'Наименование', x: 80, w: 235 },
+    { title: 'Выручка', x: 325, w: 75, align: 'right' },
+    { title: 'Прибыль', x: 410, w: 75, align: 'right' },
+    { title: 'Продаж', x: 500, w: 45, align: 'right' },
+  ]);
+
+  data.otherProducts.forEach((item, index) => {
+    y = drawTableRow(
+      doc,
+      y,
+      [
+        { value: index + 1, x: 46, w: 25 },
+        { value: item.name || 'Без названия', x: 80, w: 235 },
+        { value: money(item.revenue), x: 325, w: 75, align: 'right' },
+        { value: money(item.netProfit), x: 410, w: 75, align: 'right' },
+        { value: item.count, x: 500, w: 45, align: 'right' },
+      ],
+      index
+    );
+  });
+
+  const otherRevenue = data.otherProducts.reduce(
+    (sum, item) => sum + (item.revenue || 0),
+    0
+  );
+
+  const otherProfit = data.otherProducts.reduce(
+    (sum, item) => sum + (item.netProfit || 0),
+    0
+  );
+
+  const otherCount = data.otherProducts.reduce(
+    (sum, item) => sum + (item.count || 0),
+    0
+  );
+
+  y += 8;
+
+  y = drawTableRow(
+    doc,
+    y,
+    [
+      { value: '', x: 46, w: 25 },
+      { value: 'ИТОГО', x: 80, w: 235 },
+      { value: money(otherRevenue), x: 325, w: 75, align: 'right' },
+      { value: money(otherProfit), x: 410, w: 75, align: 'right' },
+      { value: otherCount, x: 500, w: 45, align: 'right' },
+    ],
+    999
+  );
+}
     doc.end();
   } catch (error) {
     console.error('Ошибка /brands-report/pdf:', error);
