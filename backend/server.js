@@ -1,4 +1,4 @@
-require('dotenv').config();
+
 
 process.env.TZ = 'Asia/Almaty';
 
