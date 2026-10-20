@@ -1,5 +1,3 @@
-
-
 process.env.TZ = 'Asia/Almaty';
 
 const supabase = require('./supabase');
