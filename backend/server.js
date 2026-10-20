@@ -1,7 +1,10 @@
-﻿process.env.TZ = 'Asia/Almaty';
+require('dotenv').config();
+
+process.env.TZ = 'Asia/Almaty';
 
 const supabase = require('./supabase');
 const express = require('express');
+const supabaseNew = require('./supabase_new');
 const cors = require('cors');
 const { google } = require('googleapis');
 const ExcelJS = require('exceljs');
@@ -1522,6 +1525,137 @@ try {
   if (supabaseError) {
     console.error('Ошибка Supabase insert:', supabaseError);
   }
+
+    // ===== СИНХРОНИЗАЦИЯ С НОВЫМ ПРИЛОЖЕНИЕМ =====
+    try {
+      const orderDate = parseDateForSupabase(saleDate);
+
+      for (let itemIndex = 0; itemIndex < values.length; itemIndex++) {
+        const row = values[itemIndex];
+
+        const productName = String(row[2] || '').trim();
+        const itemClient = String(row[13] || '').trim();
+        const unitCost = Number(row[4]) || 0;
+        const unitPrice = Number(row[5]) || 0;
+
+        if (!productName || !itemClient) continue;
+
+        // 1. Находим накладную в новой таблице sales_orders
+        // По дате + клиенту.
+        // Для обычной работы этого достаточно, пока на одного клиента
+        // нет нескольких накладных в один день.
+        const { data: orders, error: orderError } = await supabase
+          .from('sales_orders')
+          .select('id, external_number, order_date, client')
+          .eq('order_date', orderDate)
+          .eq('client', itemClient)
+          .order('created_at', { ascending: false });
+
+        if (orderError) {
+          console.error('Ошибка поиска sales_orders:', orderError);
+          continue;
+        }
+
+        let targetOrder = null;
+
+        if (!orders || orders.length === 0) {
+          // Такой продажи в новой ERP ещё нет — создаём её
+          const { data: createdOrders, error: createOrderError } = await supabase
+            .from('sales_orders')
+            .insert({
+              order_date: orderDate,
+              client: itemClient,
+              deal_channel: row[1] || 'ОПТ',
+              brand: detectBrand(productName),
+              external_number: batchId.replace('BATCH-', ''),
+              source: 'old-app',
+              source_row_key: `old-app-order:${batchId}`,
+              status: 'closed',
+              base_amount: unitPrice,
+              total_amount: unitPrice,
+              received_amount: unitPrice,
+              balance_amount: 0,
+              comment: row[8] || '',
+            })
+            .select('id, external_number, order_date, client')
+            .single();
+
+          if (createOrderError) {
+            console.error(
+              'Ошибка создания sales_orders:',
+              createOrderError
+            );
+            continue;
+          }
+
+          targetOrder = createdOrders;
+
+          console.log(
+            `SYNC ORDER CREATED: ${targetOrder.external_number} / ${itemClient}`
+          );
+        } else if (orders.length > 1) {
+          console.warn(
+            `Найдено несколько накладных ${orderDate} / ${itemClient}. Позиция не привязана автоматически.`
+          );
+          continue;
+        } else {
+          targetOrder = orders[0];
+        }
+
+        // 2. Находим товар в новой таблице products
+        const { data: products, error: productError } = await supabase
+          .from('products')
+          .select('id, model, brand')
+          .ilike('model', productName)
+          .limit(1);
+
+        if (productError) {
+          console.error('Ошибка поиска products:', productError);
+          continue;
+        }
+
+        if (!products || products.length === 0) {
+          console.warn(`Товар не найден в products: ${productName}`);
+          continue;
+        }
+
+        const product = products[0];
+
+        // Уникальный ключ не даст создать дубль
+        const sourceRowKey = `old-app:${batchId}:${itemIndex + 1}`;
+
+        const { error: itemError } = await supabase
+          .from('sales_order_items')
+          .upsert(
+            {
+              order_id: targetOrder.id,
+              product_id: product.id,
+              quantity: 1,
+              unit_price: unitPrice,
+              unit_cost: unitCost,
+              source_row_key: sourceRowKey,
+            },
+            {
+              onConflict: 'source_row_key',
+            }
+          );
+
+        if (itemError) {
+          console.error('Ошибка записи sales_order_items:', itemError);
+        } else {
+          console.log(
+            `SYNC OK: ${targetOrder.external_number} -> ${productName}`
+          );
+        }
+      }
+    } catch (syncError) {
+      // ВАЖНО: ошибка новой ERP не должна ломать старое приложение
+      console.error(
+        'Ошибка синхронизации sales_order_items:',
+        syncError.message
+      );
+    }
+
 } catch (e) {
   console.error('Supabase duplicate error:', e.message);
 }
@@ -1574,6 +1708,30 @@ app.post('/delete-sale', async (req, res) => {
 
       if (error) throw error;
       deletedFromSupabase = data?.length || 0;
+
+            // ===== УДАЛЕНИЕ ПОЗИЦИЙ ИЗ НОВОГО ПРИЛОЖЕНИЯ =====
+            try {
+              const { error: newItemsDeleteError } = await supabase
+                .from('sales_order_items')
+                .delete()
+                .like('source_row_key', `old-app:${cleanBatchId}:%`);
+
+              if (newItemsDeleteError) {
+                console.error(
+                  'Ошибка удаления из sales_order_items:',
+                  newItemsDeleteError
+                );
+              } else {
+                console.log(
+                  `SYNC DELETE OK: sales_order_items / ${cleanBatchId}`
+                );
+              }
+            } catch (syncDeleteError) {
+              console.error(
+                'Ошибка синхронизации удаления:',
+                syncDeleteError.message
+              );
+            }
 
       const valuesResponse = await sheetsApi.spreadsheets.values.get({
         spreadsheetId: SALES_SPREADSHEET_ID,
@@ -3773,6 +3931,129 @@ if (data.otherProducts && data.otherProducts.length > 0) {
       error: 'Ошибка PDF отчёта по брендам',
       details: error.message,
     });
+  }
+});
+
+// ================= ДОП. ВЫПЛАТА ВАНЕ: EDISSON / ETALON PDF =================
+// Read-only report. Does not write sales, prices, expenses, or profits.
+app.get('/vanya-discount-report/pdf', async (req, res) => {
+  try {
+    const earliest = '2026-10-20';
+    const validDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)
+      && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+    const requestedFrom = req.query.dateFrom || earliest;
+    const requestedTo = req.query.dateTo || todayRu().split('.').reverse().join('-');
+    if (!validDate(requestedFrom) || !validDate(requestedTo)) {
+      return res.status(400).json({ error: 'Укажите даты в формате YYYY-MM-DD' });
+    }
+    const dateFrom = requestedFrom < earliest ? earliest : requestedFrom;
+    const dateTo = requestedTo;
+    if (dateTo < dateFrom) {
+      return res.status(400).json({ error: 'Дата окончания раньше начала периода' });
+    }
+
+    // View contains only new sales and their original Vanya prices.
+    const rows = [];
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('vanya_discount_new_sales')
+        .select('sale_id,sale_date,brand,model,original_vanya_price,vanya_bonus')
+        .gte('sale_date', dateFrom)
+        .lte('sale_date', dateTo)
+        .order('sale_id', { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+
+    const grouped = new Map();
+    for (const row of rows) {
+      const key = `${row.brand}|${row.model}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          brand: row.brand, model: row.model,
+          originalPrice: Number(row.original_vanya_price), qty: 0,
+          bonus: 0,
+        });
+      }
+      const item = grouped.get(key);
+      item.qty += 1; // Each sales row represents a single sold item.
+      item.bonus += Number(row.vanya_bonus) || 0;
+    }
+    const items = [...grouped.values()].sort((a, b) =>
+      a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model));
+    const count = items.reduce((sum, item) => sum + item.qty, 0);
+    const totalOriginal = items.reduce((sum, item) => sum + item.originalPrice * item.qty, 0);
+    const totalSaving = totalOriginal * 0.05;
+    const totalBonus = items.reduce((sum, item) => sum + item.bonus, 0);
+    const fmt = (n) => Number(n).toLocaleString('ru-RU', {
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }) + ' ₸';
+
+    const doc = setupPdf(res, 'vanya-edisson-etalon-report.pdf');
+    let y = drawTop(doc, 'Доп. выплата за Edisson / Etalon',
+      `Период: ${dateFrom} — ${dateTo}  |  Продажи с 20.10.2026`);
+    drawCard(doc, 36, y, 166, 'Продано', `${count} шт.`);
+    drawCard(doc, 214, y, 166, 'Экономия 5%', fmt(totalSaving));
+    drawCard(doc, 392, y, 166, 'К выплате Ване', fmt(totalBonus));
+    y += 80;
+    y = drawSectionTitle(doc, 'Расшифровка по моделям', y);
+
+    if (!items.length) {
+      doc.fillColor(PDF.gray).fontSize(11)
+        .text('Подходящих новых продаж за выбранный период нет.', PDF.left, y);
+      y += 38;
+    }
+    for (const [index, item] of items.entries()) {
+      y = ensurePage(doc, y, 138);
+      if (index > 0) y += 8;
+      doc.roundedRect(36, y, 523, 24, 5).fill('#E5E7EB');
+      doc.fillColor(PDF.dark).fontSize(10)
+        .text(item.model, 45, y + 6, { width: 340 });
+      doc.fontSize(9).text(`${item.qty} шт.`, 448, y + 7, {
+        width: 99, align: 'right',
+      });
+      y += 30;
+      const perUnitSaving = item.originalPrice * 0.05;
+      const perUnitBonus = item.originalPrice * 0.025;
+      const detail = [
+        ['Цена Вани до скидки (1 шт.)', fmt(item.originalPrice)],
+        ['Цена Вани после скидки 5% (1 шт.)', fmt(item.originalPrice * 0.95)],
+        ['Экономия 5% (всего)', fmt(perUnitSaving * item.qty)],
+        ['Доля Вани 2,5% (1 шт.)', fmt(perUnitBonus)],
+        ['К выплате Ване (по модели)', fmt(item.bonus)],
+      ];
+      detail.forEach(([label, value], i) => {
+        if (i === 4) doc.rect(40, y - 2, 511, 18).fill('#EFF6FF');
+        doc.fillColor(i === 4 ? '#1D4ED8' : PDF.dark)
+          .fontSize(i === 4 ? 9.5 : 8.5)
+          .text(label, 46, y, { width: 335 });
+        doc.text(value, 392, y, { width: 156, align: 'right' });
+        y += 19;
+      });
+    }
+    y = ensurePage(doc, y + 18, 80);
+    doc.moveTo(36, y).lineTo(559, y).strokeColor(PDF.line).stroke();
+    y += 12;
+    doc.fillColor(PDF.dark).fontSize(11).text(`Всего продано: ${count} шт.`, 36, y);
+    y += 23;
+    doc.fillColor('#1D4ED8').fontSize(15)
+      .text(`ИТОГО К ВЫПЛАТЕ ВАНЕ: ${fmt(totalBonus)}`, 36, y, { width: 523 });
+    y += 32;
+    doc.fillColor(PDF.gray).fontSize(8.5)
+      .text('Доля Вани: 50% от дополнительной скидки 5%. Обычные 4% не включены. ' +
+        'Выплата вносится в общие расходы вручную. Продажи, цены и прибыль не изменяются.',
+        36, y, { width: 523 });
+    doc.end();
+  } catch (error) {
+    console.error('Ошибка /vanya-discount-report/pdf:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Ошибка PDF отчёта Edisson / Etalon', details: error.message });
+    } else {
+      res.end();
+    }
   }
 });
 
