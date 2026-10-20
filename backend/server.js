@@ -36,7 +36,7 @@ app.get('/supabase-test', async (req, res) => {
     });
   }
 });
-const PORT = 8080;
+const PORT = Number(process.env.PORT) || 8080;
 
 const MODEL_SPREADSHEET_ID = '17EH3JK7KT7bhxGTPeST6iebzGEdXvz6MJi34AGj7rPg';
 const SALES_SPREADSHEET_ID = '1D26s-VjLPvg43z-Hk38fU7Y4tPFZ9h-UfFjJzQnvtB0';
