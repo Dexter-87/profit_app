@@ -3985,7 +3985,6 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
       a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model));
     const count = items.reduce((sum, item) => sum + item.qty, 0);
     const totalOriginal = items.reduce((sum, item) => sum + item.originalPrice * item.qty, 0);
-    const totalClientDiscount = totalOriginal * 0.04;
     const totalBonus = items.reduce((sum, item) => sum + item.bonus, 0);
     const fmt = (n) => Number(n).toLocaleString('ru-RU', {
       minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -3995,8 +3994,7 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
     let y = drawTop(doc, 'Доп. выплата за Edisson / Etalon',
       `Период: ${dateFrom} — ${dateTo}  |  Продажи с 20.10.2026`);
     drawCard(doc, 36, y, 166, 'Продано', `${count} шт.`);
-    drawCard(doc, 214, y, 166, 'Скидка клиентам 4%', fmt(totalClientDiscount));
-    drawCard(doc, 392, y, 166, 'К выплате Ване', fmt(totalBonus));
+    drawCard(doc, 214, y, 166, 'К выплате Ване', fmt(totalBonus));
     y += 80;
     y = drawSectionTitle(doc, 'Расшифровка по моделям', y);
 
@@ -4015,16 +4013,14 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
         width: 99, align: 'right',
       });
       y += 30;
-      const perUnitTotalDiscount = item.originalPrice * 0.08;
-      const perUnitClientDiscount = item.originalPrice * 0.04;
+      const perUnitDiscount = item.originalPrice * 0.04;
       const perUnitBonus = item.originalPrice * 0.02;
+
       const detail = [
-        ['Цена Вани до скидки (1 шт.)', fmt(item.originalPrice)],
-        ['Цена после общей скидки 8% (1 шт.)', fmt(item.originalPrice * 0.92)],
-        ['Общая скидка 8% (всего)', fmt(perUnitTotalDiscount * item.qty)],
-        ['Скидка клиенту 4% (всего)', fmt(perUnitClientDiscount * item.qty)],
-        ['Доля Лёши 2% (всего)', fmt(perUnitBonus * item.qty)],
-        ['Доля Вани 2% (1 шт.)', fmt(perUnitBonus)],
+        ['Цена Вани по прайсу (1 шт.)', fmt(item.originalPrice)],
+        ['Вычет 4% (1 шт.)', fmt(perUnitDiscount)],
+        ['Цена Вани после вычета 4% (1 шт.)', fmt(item.originalPrice * 0.96)],
+        ['Доп. выплата Ване 2% (1 шт.)', fmt(perUnitBonus)],
         ['К выплате Ване (по модели)', fmt(item.bonus)],
       ];
       detail.forEach(([label, value], i) => {
@@ -4044,11 +4040,6 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
     doc.fillColor('#1D4ED8').fontSize(15)
       .text(`ИТОГО К ВЫПЛАТЕ ВАНЕ: ${fmt(totalBonus)}`, 36, y, { width: 523 });
     y += 32;
-    doc.fillColor(PDF.gray).fontSize(8.5)
-      .text('Распределение дополнительных 8%: клиентам — 4%, Лёше — 2%, Ване — 2% ' +
-        'от первоначальной цены Вани. Доля Вани вносится в расходы вручную. ' +
-        'Данные о скидке клиентам расчётные, не сверены с ценой каждой продажи.',
-        36, y, { width: 523 });
     doc.end();
   } catch (error) {
     console.error('Ошибка /vanya-discount-report/pdf:', error);
