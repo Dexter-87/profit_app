@@ -22,6 +22,185 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   DateTime? _dateFrom;
   DateTime? _dateTo;
 
+
+  // Отдельный отчёт. Существующие расчёты прибыли не затрагиваются.
+  static final DateTime _vanyaStart = DateTime(2026, 10, 20);
+  static const Map<String, int> _vanyaPrices = {
+    'EDISSON ER 100 V': 46853,
+    'EDISSON ER 50 V': 34783,
+    'EDISSON ER 80 V': 40463,
+    'EDISSON ES 30 V': 29813,
+    'ETALON ER 100 V': 47563,
+    'ETALON ER 50 V': 36913,
+    'ETALON ER 80 H': 42593,
+    'ETALON ER 80 V': 41883,
+    'ETALON ES 30 V': 33363,
+    'ETALON ES 50 V': 39043,
+  };
+
+  DateTime? _vanyaParseDate(dynamic raw) {
+    final v = (raw ?? '').toString().trim();
+    if (v.isEmpty) return null;
+    final parts = v.split('.');
+    if (parts.length == 3) {
+      final d = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final y = int.tryParse(parts[2]);
+      if (d != null && m != null && y != null) {
+        final result = DateTime(y, m, d);
+        if (result.day == d && result.month == m && result.year == y) return result;
+      }
+    }
+    return DateTime.tryParse(v);
+  }
+
+  String? _vanyaMatch(String raw) {
+    final normalized = raw.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]+'), ' ').trim();
+    for (final model in _vanyaPrices.keys) {
+      final escaped = RegExp.escape(model);
+      if (RegExp('(^| )' + escaped + r'( |$)').hasMatch(normalized)) return model;
+    }
+    return null;
+  }
+
+  Future<void> _openVanyaReport() async {
+    final from = _dateFrom ?? _vanyaStart;
+    final to = _dateTo ?? DateTime.now();
+    if (to.isBefore(from)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Проверьте даты отчёта')),
+      );
+      return;
+    }
+    showDialog<void>(context: context, barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()));
+    try {
+      final rows = await ApiService.fetchSales();
+      final sums = <String, int>{};
+      var included = 0;
+      var ignoredWithoutDate = 0;
+      for (final row in rows) {
+        final product = (row['Наименование'] ?? row['Товар'] ?? row['product'] ?? '').toString();
+        final model = _vanyaMatch(product);
+        if (model == null) continue;
+        final date = _vanyaParseDate(row['Дата'] ?? row['date']);
+        if (date == null) { ignoredWithoutDate++; continue; }
+        if (date.isBefore(_vanyaStart) || date.isBefore(from) || date.isAfter(to)) continue;
+        // Если API вернул дату создания, исключаем созданные до запуска отчёта записи.
+        final createdRaw = row['created_at'] ?? row['createdAt'];
+        if (createdRaw != null) {
+          final created = DateTime.tryParse(createdRaw.toString());
+          if (created != null && created.isBefore(_vanyaStart)) continue;
+        }
+        sums.update(model, (value) => value + 1, ifAbsent: () => 1);
+        included++;
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      final totalCents = sums.entries.fold<int>(0,
+        (total, e) => total + (e.value * _vanyaPrices[e.key]! * 20));
+      // Цены целые, поэтому 2% = (цена × 20) / 1000.
+      final total = totalCents / 1000.0;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          backgroundColor: AppColors.bg,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760, maxHeight: 700),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: [Color(0xFF1666CB), Color(0xFF348FF0)]),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.receipt_long_outlined, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('TechnoOpt', style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 2),
+                      const Text('Доп. выплата за Edisson / Etalon', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    ])),
+                    IconButton(onPressed: () => Navigator.pop(dialogContext), icon: const Icon(Icons.close, color: Colors.white)),
+                  ]),
+                ),
+                Flexible(child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Период: ${_formatDisplayDate(from)} — ${_formatDisplayDate(to)}',
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: AppUi.cardDecoration(color: AppColors.bg, radius: 16,
+                        borderColor: AppColors.stroke, shadows: const []),
+                      child: Wrap(spacing: 30, runSpacing: 14, children: [
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('Продано', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          const SizedBox(height: 5),
+                          Text('$included шт.', style: const TextStyle(color: AppColors.textMain, fontSize: 22, fontWeight: FontWeight.w800)),
+                        ]),
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('К выплате Ване', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                          const SizedBox(height: 5),
+                          Text(_formatMoney(total), style: const TextStyle(color: Color(0xFF35B5F5), fontSize: 22, fontWeight: FontWeight.w900)),
+                        ]),
+                      ]),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text('Расшифровка по моделям', style: TextStyle(color: AppColors.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 10),
+                    if (sums.isEmpty)
+                      const Padding(padding: EdgeInsets.symmetric(vertical: 18), child: Text('Новых продаж Edisson и Etalon за этот период нет.',
+                        style: TextStyle(color: AppColors.textSecondary))),
+                    ...sums.entries.map((e) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+                      decoration: AppUi.cardDecoration(color: AppColors.bg, radius: 14,
+                        borderColor: AppColors.stroke.withOpacity(0.75), shadows: const []),
+                      child: Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(e.key, style: const TextStyle(color: AppColors.textMain, fontSize: 13, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 4),
+                          Text('${e.value} шт. × ${_formatMoney(_vanyaPrices[e.key])} × 2%',
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        ])),
+                        const SizedBox(width: 10),
+                        Text(_formatMoney(e.value * _vanyaPrices[e.key]! * 0.02),
+                          style: const TextStyle(color: AppColors.textMain, fontWeight: FontWeight.w800, fontSize: 13)),
+                      ]),
+                    )),
+                    if (ignoredWithoutDate > 0)
+                      Text('Не учтено без даты: $ignoredWithoutDate', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    const SizedBox(height: 12),
+                    const Text('Учитываются только новые продажи с 20.10.2026. Сумма вносится в общие расходы вручную. Данные приложения не изменяются.',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                  ]),
+                )),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Align(alignment: Alignment.centerRight,
+                    child: TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Закрыть'))),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не удалось загрузить продажи: $e')));
+    }
+  }
+
   final double defaultRevenuePlan = 10000000;
   final double defaultProfitPlan = 800000;
 
@@ -686,6 +865,12 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                                   title: 'Отчёт по брендам',
                                   icon: Icons.sell_outlined,
                                   endpoint: 'brands-report',
+                                ),
+                                const SizedBox(height: 10),
+                                _pdfButton(
+                                  title: 'Доп. выплата за Edisson / Etalon',
+                                  icon: Icons.receipt_long_outlined,
+                                  endpoint: 'vanya-discount-report',
                                 ),
                                 const SizedBox(height: 10),
                                 _pdfButton(
