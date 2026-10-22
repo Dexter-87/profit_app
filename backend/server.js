@@ -3980,13 +3980,16 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
       }
       const item = grouped.get(key);
       item.qty += 1; // Each sales row represents a single sold item.
-      item.bonus += Number(row.vanya_bonus) || 0;
+      // Recalculate the report at the current 2% rate; the database view may contain an outdated bonus.
+      item.bonus += (Number(row.original_vanya_price) || 0) * 0.02;
     }
     const items = [...grouped.values()].sort((a, b) =>
       a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model));
     const count = items.reduce((sum, item) => sum + item.qty, 0);
     const totalOriginal = items.reduce((sum, item) => sum + item.originalPrice * item.qty, 0);
-    const totalSaving = totalOriginal * 0.05;
+    const totalDiscount = totalOriginal * 0.08;
+    const totalClientDiscount = totalOriginal * 0.04;
+    const totalAlexeyShare = totalOriginal * 0.02;
     const totalBonus = items.reduce((sum, item) => sum + item.bonus, 0);
     const fmt = (n) => Number(n).toLocaleString('ru-RU', {
       minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -3996,7 +3999,7 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
     let y = drawTop(doc, 'Доп. выплата за Edisson / Etalon',
       `Период: ${dateFrom} — ${dateTo}  |  Продажи с 20.10.2026`);
     drawCard(doc, 36, y, 166, 'Продано', `${count} шт.`);
-    drawCard(doc, 214, y, 166, 'Экономия 5%', fmt(totalSaving));
+    drawCard(doc, 214, y, 166, 'Скидка клиентам 4%', fmt(totalClientDiscount));
     drawCard(doc, 392, y, 166, 'К выплате Ване', fmt(totalBonus));
     y += 80;
     y = drawSectionTitle(doc, 'Расшифровка по моделям', y);
@@ -4007,7 +4010,7 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
       y += 38;
     }
     for (const [index, item] of items.entries()) {
-      y = ensurePage(doc, y, 138);
+      y = ensurePage(doc, y, 180);
       if (index > 0) y += 8;
       doc.roundedRect(36, y, 523, 24, 5).fill('#E5E7EB');
       doc.fillColor(PDF.dark).fontSize(10)
@@ -4016,19 +4019,22 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
         width: 99, align: 'right',
       });
       y += 30;
-      const perUnitSaving = item.originalPrice * 0.05;
+      const perUnitTotalDiscount = item.originalPrice * 0.08;
+      const perUnitClientDiscount = item.originalPrice * 0.04;
       const perUnitBonus = item.originalPrice * 0.02;
       const detail = [
         ['Цена Вани до скидки (1 шт.)', fmt(item.originalPrice)],
-        ['Цена Вани после скидки 5% (1 шт.)', fmt(item.originalPrice * 0.95)],
-        ['Экономия 5% (всего)', fmt(perUnitSaving * item.qty)],
+        ['Цена после общей скидки 8% (1 шт.)', fmt(item.originalPrice * 0.92)],
+        ['Общая скидка 8% (всего)', fmt(perUnitTotalDiscount * item.qty)],
+        ['Скидка клиенту 4% (всего)', fmt(perUnitClientDiscount * item.qty)],
+        ['Доля Лёши 2% (всего)', fmt(perUnitBonus * item.qty)],
         ['Доля Вани 2% (1 шт.)', fmt(perUnitBonus)],
         ['К выплате Ване (по модели)', fmt(item.bonus)],
       ];
       detail.forEach(([label, value], i) => {
-        if (i === 4) doc.rect(40, y - 2, 511, 18).fill('#EFF6FF');
-        doc.fillColor(i === 4 ? '#1D4ED8' : PDF.dark)
-          .fontSize(i === 4 ? 9.5 : 8.5)
+        if (i === detail.length - 1) doc.rect(40, y - 2, 511, 18).fill('#EFF6FF');
+        doc.fillColor(i === detail.length - 1 ? '#1D4ED8' : PDF.dark)
+          .fontSize(i === detail.length - 1 ? 9.5 : 8.5)
           .text(label, 46, y, { width: 335 });
         doc.text(value, 392, y, { width: 156, align: 'right' });
         y += 19;
@@ -4043,8 +4049,9 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
       .text(`ИТОГО К ВЫПЛАТЕ ВАНЕ: ${fmt(totalBonus)}`, 36, y, { width: 523 });
     y += 32;
     doc.fillColor(PDF.gray).fontSize(8.5)
-      .text('Доля Вани: 50% от дополнительной скидки 5%. Обычные 4% не включены. ' +
-        'Выплата вносится в общие расходы вручную. Продажи, цены и прибыль не изменяются.',
+      .text('Распределение дополнительных 8%: клиентам — 4%, Лёше — 2%, Ване — 2% ' +
+        'от первоначальной цены Вани. Доля Вани вносится в расходы вручную. ' +
+        'Данные о скидке клиентам расчётные, не сверены с ценой каждой продажи.',
         36, y, { width: 523 });
     doc.end();
   } catch (error) {
