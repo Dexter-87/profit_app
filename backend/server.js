@@ -1,5 +1,3 @@
-﻿require('dotenv').config();
-
 process.env.TZ = 'Asia/Almaty';
 
 const supabase = require('./supabase');
@@ -36,7 +34,7 @@ app.get('/supabase-test', async (req, res) => {
     });
   }
 });
-const PORT = 8080;
+const PORT = Number(process.env.PORT) || 8080;
 
 const MODEL_SPREADSHEET_ID = '17EH3JK7KT7bhxGTPeST6iebzGEdXvz6MJi34AGj7rPg';
 const SALES_SPREADSHEET_ID = '1D26s-VjLPvg43z-Hk38fU7Y4tPFZ9h-UfFjJzQnvtB0';
@@ -3987,9 +3985,7 @@ app.get('/vanya-discount-report/pdf', async (req, res) => {
       a.brand.localeCompare(b.brand) || a.model.localeCompare(b.model));
     const count = items.reduce((sum, item) => sum + item.qty, 0);
     const totalOriginal = items.reduce((sum, item) => sum + item.originalPrice * item.qty, 0);
-    const totalDiscount = totalOriginal * 0.08;
     const totalClientDiscount = totalOriginal * 0.04;
-    const totalAlexeyShare = totalOriginal * 0.02;
     const totalBonus = items.reduce((sum, item) => sum + item.bonus, 0);
     const fmt = (n) => Number(n).toLocaleString('ru-RU', {
       minimumFractionDigits: 2, maximumFractionDigits: 2,
